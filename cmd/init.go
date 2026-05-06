@@ -18,7 +18,7 @@ var initProfileFlag string
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Configure a sync profile (SSH host + remote directory)",
+	Short: " configure a sync profile (SSH host + remote directory)",
 	RunE:  runInit,
 }
 

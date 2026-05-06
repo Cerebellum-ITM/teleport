@@ -10,7 +10,7 @@ import (
 
 var profilesCmd = &cobra.Command{
 	Use:   "profiles",
-	Short: "List configured sync profiles",
+	Short: " list configured sync profiles",
 	RunE:  runProfiles,
 }
 
