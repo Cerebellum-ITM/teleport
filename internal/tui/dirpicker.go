@@ -5,13 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
 )
 
 const (
-	iconFolder  = "󰉋 "
+	iconFolder   = "󰉋 "
 	iconFolderUp = "󰉋 "
 )
 
@@ -36,6 +37,7 @@ type DirPicker struct {
 	client   *sshpkg.Client
 	cwd      string
 	dirs     []string
+	filter   textinput.Model
 	cursor   int
 	chosen   string
 	quitting bool
@@ -51,15 +53,35 @@ var (
 )
 
 func NewDirPicker(client *sshpkg.Client, startPath string) DirPicker {
+	fi := textinput.New()
+	fi.Placeholder = "filter..."
+	fi.Focus()
+
 	return DirPicker{
 		client:  client,
 		cwd:     startPath,
 		loading: true,
+		filter:  fi,
 	}
 }
 
 func (m DirPicker) Init() tea.Cmd {
 	return listDirsCmd(m.client, m.cwd)
+}
+
+// filteredDirs returns the subset of m.dirs that match the current filter text.
+func (m DirPicker) filteredDirs() []string {
+	q := strings.ToLower(m.filter.Value())
+	if q == "" {
+		return m.dirs
+	}
+	var out []string
+	for _, d := range m.dirs {
+		if strings.Contains(strings.ToLower(d), q) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -76,37 +98,64 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		visible := m.filteredDirs()
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
 			return m, tea.Quit
 
+		case "esc":
+			m.filter.SetValue("")
+			m.cursor = 0
+			return m, nil
+
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			return m, nil
 
 		case "down", "j":
-			if m.cursor < len(m.dirs)-1 {
+			if m.cursor < len(visible)-1 {
 				m.cursor++
 			}
+			return m, nil
 
 		case "enter":
-			if len(m.dirs) > 0 {
-				newPath := filepath.Join(m.cwd, m.dirs[m.cursor])
+			if len(visible) > 0 {
+				newPath := filepath.Join(m.cwd, visible[m.cursor])
 				m.cwd = newPath
 				m.loading = true
 				m.cursor = 0
+				m.filter.SetValue("")
 				return m, listDirsCmd(m.client, newPath)
 			}
+			return m, nil
 
-		case "backspace", "left", "h":
-			parent := filepath.Dir(m.cwd)
-			if parent != m.cwd {
-				m.cwd = parent
-				m.loading = true
-				m.cursor = 0
-				return m, listDirsCmd(m.client, parent)
+		case "backspace":
+			// When the filter is already empty, navigate up one level.
+			if m.filter.Value() == "" {
+				parent := filepath.Dir(m.cwd)
+				if parent != m.cwd {
+					m.cwd = parent
+					m.loading = true
+					m.cursor = 0
+					return m, listDirsCmd(m.client, parent)
+				}
+				return m, nil
+			}
+
+		case "left", "h":
+			if m.filter.Value() == "" {
+				parent := filepath.Dir(m.cwd)
+				if parent != m.cwd {
+					m.cwd = parent
+					m.loading = true
+					m.cursor = 0
+					return m, listDirsCmd(m.client, parent)
+				}
+				return m, nil
 			}
 
 		case "s":
@@ -114,7 +163,17 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	}
-	return m, nil
+
+	// All other keys go to the filter input.
+	var cmd tea.Cmd
+	m.filter, cmd = m.filter.Update(msg)
+
+	// Reset cursor when filter text changes so it doesn't go out of range.
+	if m.cursor >= len(m.filteredDirs()) {
+		m.cursor = 0
+	}
+
+	return m, cmd
 }
 
 func (m DirPicker) View() tea.View {
@@ -125,7 +184,8 @@ func (m DirPicker) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(headerStyle.Render("  Remote Directory Browser") + "\n")
-	b.WriteString(dimStyle.Render("  "+m.cwd) + "\n\n")
+	b.WriteString(dimStyle.Render("  "+m.cwd) + "\n")
+	b.WriteString("  " + m.filter.View() + "\n\n")
 
 	if m.loading {
 		b.WriteString(dimStyle.Render("  Loading...") + "\n")
@@ -137,11 +197,17 @@ func (m DirPicker) View() tea.View {
 		return tea.NewView(b.String())
 	}
 
-	if len(m.dirs) == 0 {
-		b.WriteString(dimStyle.Render("  (empty directory)") + "\n")
+	visible := m.filteredDirs()
+
+	if len(visible) == 0 {
+		if m.filter.Value() != "" {
+			b.WriteString(dimStyle.Render("  (no matches)") + "\n")
+		} else {
+			b.WriteString(dimStyle.Render("  (empty directory)") + "\n")
+		}
 	}
 
-	for i, d := range m.dirs {
+	for i, d := range visible {
 		if i == m.cursor {
 			b.WriteString(cursorStyle.Render("  ▶ "+iconFolder+d) + "\n")
 		} else {
@@ -150,7 +216,7 @@ func (m DirPicker) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  ↑/↓ navigate  enter=enter  backspace=up  s=select this dir  q=quit") + "\n")
+	b.WriteString(dimStyle.Render("  ↑/↓ navigate  enter=descend  backspace/h=up  esc=clear filter  s=select  q=quit") + "\n")
 	b.WriteString(selectedStyle.Render("  Selected: "+m.cwd) + "\n")
 
 	return tea.NewView(b.String())

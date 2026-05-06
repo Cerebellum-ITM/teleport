@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] - 2026-05-06
+
+### Added
+
+- Added a live text filter to the directory picker, allowing users to filter directories as they type.
+
+### Changed
+
+- Updated the host picker to display all hosts initially by pre-setting the filter text before applying the filter state.
+- Changed the behavior of pressing Backspace on an empty filter field to trigger upward navigation.
+
 ## [Unreleased]
 
 ### Added
@@ -11,7 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `internal/version` package with `Version`, `Commit`, and `Date` variables injected at build time via `-ldflags`
 - `Makefile` now derives version from `git describe --tags --always --dirty` and injects it on every `make build` and `make install`
 
+### Added
+- Dir browser now has a live text filter — type to narrow visible directories, `esc` clears it, `backspace` on empty filter navigates up
+
 ### Fixed
+- Host picker: filter no longer starts blank — all hosts are visible as soon as the picker opens
 - SSH authentication: agent (1Password, ssh-agent) used exclusively when `SSH_AUTH_SOCK` is set — avoids `Too many authentication failures` on servers with low `MaxAuthTries` limits
 - SSH authentication: when `IdentityFile` is set in `~/.ssh/config`, only the matching agent signer is offered (fingerprint comparison) — prevents exhausting `MaxAuthTries` when the agent holds many keys
 - `IdentityFile` now accepts both the private key path and the `.pub` path directly (1Password exports only the public key)

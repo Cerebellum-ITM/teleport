@@ -40,7 +40,8 @@ func NewHostPicker(hosts []sshpkg.Host) HostPicker {
 	l.Title = "Select SSH Host"
 	l.Styles.Title = titleStyle
 	l.SetFilteringEnabled(true)
-	l.SetFilterState(list.Filtering)
+	l.SetFilterText("")          // populates filteredItems synchronously so the list isn't blank
+	l.SetFilterState(list.Filtering) // switch to edit mode with the input focused
 
 	return HostPicker{list: l}
 }
