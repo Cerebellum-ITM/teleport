@@ -139,18 +139,22 @@ func (c *Client) Close() {
 }
 
 func authMethods() ([]ssh.AuthMethod, error) {
-	var methods []ssh.AuthMethod
-
-	// SSH agent
+	// If an SSH agent is available, use it exclusively.
+	// Mixing agent + key files can exceed MaxAuthTries on servers with low
+	// limits (common default is 6); agents like 1Password already select the
+	// right key per host, so adding file keys on top only adds failed attempts.
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		conn, err := net.Dial("unix", sock)
 		if err == nil {
-			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
+			return []ssh.AuthMethod{
+				ssh.PublicKeysCallback(agent.NewClient(conn).Signers),
+			}, nil
 		}
 	}
 
-	// Default key files
+	// No agent: fall back to well-known key files.
 	home, _ := os.UserHomeDir()
+	var signers []ssh.Signer
 	for _, name := range []string{"id_ed25519", "id_rsa", "id_ecdsa"} {
 		path := filepath.Join(home, ".ssh", name)
 		key, err := os.ReadFile(path)
@@ -161,13 +165,13 @@ func authMethods() ([]ssh.AuthMethod, error) {
 		if err != nil {
 			continue
 		}
-		methods = append(methods, ssh.PublicKeys(signer))
+		signers = append(signers, signer)
 	}
 
-	if len(methods) == 0 {
-		return nil, fmt.Errorf("no SSH auth methods available")
+	if len(signers) == 0 {
+		return nil, fmt.Errorf("no SSH auth methods available (no agent and no key files found)")
 	}
-	return methods, nil
+	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}, nil
 }
 
 func (c *Client) ListDirs(path string) ([]string, error) {

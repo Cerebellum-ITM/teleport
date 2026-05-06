@@ -40,6 +40,7 @@ func NewHostPicker(hosts []sshpkg.Host) HostPicker {
 	l.Title = "Select SSH Host"
 	l.Styles.Title = titleStyle
 	l.SetFilteringEnabled(true)
+	l.SetFilterState(list.Filtering)
 
 	return HostPicker{list: l}
 }
@@ -52,9 +53,15 @@ func (m HostPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "q":
+			// Don't quit while the user is typing in the filter input.
+			if m.list.FilterState() != list.Filtering {
+				m.quitting = true
+				return m, tea.Quit
+			}
 		case "enter":
 			if item, ok := m.list.SelectedItem().(hostItem); ok {
 				h := item.host
