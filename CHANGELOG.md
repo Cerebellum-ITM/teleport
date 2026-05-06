@@ -6,14 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.1] - 2026-05-06
 
-### Added
-
-- Added a live text filter to the directory picker, allowing users to filter directories as they type.
-
 ### Changed
 
-- Updated the host picker to display all hosts initially by pre-setting the filter text before applying the filter state.
-- Changed the behavior of pressing Backspace on an empty filter field to trigger upward navigation.
+- Relocated the local configuration file to a per-project directory under the user’s home (`~/.config/teleport/projects`) using a SHA256 hash of the current working directory.
+- Updated the `internal/config/config.go` file to support the new configuration storage location.
+- Removed the generation of `.teleport.toml` files in project folders and their corresponding `.gitignore` exclusions.
 
 ## [Unreleased]
 
@@ -21,9 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `teleport version` subcommand — prints version, short commit hash, and build timestamp
 - `internal/version` package with `Version`, `Commit`, and `Date` variables injected at build time via `-ldflags`
 - `Makefile` now derives version from `git describe --tags --always --dirty` and injects it on every `make build` and `make install`
-
-### Added
 - Dir browser now has a live text filter — type to narrow visible directories, `esc` clears it, `backspace` on empty filter navigates up
+- Local config stored at `~/.config/teleport/projects/<sha256-of-cwd>.toml` — no more `.teleport.toml` in project directories
 
 ### Fixed
 - Host picker: filter no longer starts blank — all hosts are visible as soon as the picker opens

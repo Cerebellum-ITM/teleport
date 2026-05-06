@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 const (
 	globalConfigDir  = ".config/teleport"
 	globalConfigFile = "config.toml"
-	localConfigFile  = ".teleport.toml"
 )
 
 type Profile struct {
@@ -33,6 +33,22 @@ func GlobalConfigPath() (string, error) {
 		return "", fmt.Errorf("home dir: %w", err)
 	}
 	return filepath.Join(home, globalConfigDir, globalConfigFile), nil
+}
+
+// LocalConfigPath returns ~/.config/teleport/projects/<sha256-of-cwd>.toml.
+// Storing it under ~/.config keeps project directories free of teleport files.
+func LocalConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getwd: %w", err)
+	}
+	h := sha256.Sum256([]byte(cwd))
+	name := fmt.Sprintf("%x.toml", h[:8])
+	return filepath.Join(home, globalConfigDir, "projects", name), nil
 }
 
 func LoadGlobal() (*GlobalConfig, error) {
@@ -72,19 +88,33 @@ func SaveGlobal(cfg *GlobalConfig) error {
 }
 
 func LoadLocal() (*LocalConfig, error) {
+	path, err := LocalConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &LocalConfig{}
-	if _, err := os.Stat(localConfigFile); os.IsNotExist(err) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return cfg, nil
 	}
 
-	if _, err := toml.DecodeFile(localConfigFile, cfg); err != nil {
+	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, fmt.Errorf("decode local config: %w", err)
 	}
 	return cfg, nil
 }
 
 func SaveLocal(cfg *LocalConfig) error {
-	f, err := os.Create(localConfigFile)
+	path, err := LocalConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create local config dir: %w", err)
+	}
+
+	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create local config: %w", err)
 	}
