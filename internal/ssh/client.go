@@ -15,10 +15,11 @@ import (
 )
 
 type Host struct {
-	Name     string
-	Hostname string
-	User     string
-	Port     string
+	Name         string
+	Hostname     string
+	User         string
+	Port         string
+	IdentityFile string // path to private key; .pub counterpart used for agent filtering
 }
 
 func ParseSSHConfig() ([]Host, error) {
@@ -71,6 +72,10 @@ func ParseSSHConfig() ([]Host, error) {
 			if current != nil {
 				current.Port = val
 			}
+		case "identityfile":
+			if current != nil && current.IdentityFile == "" {
+				current.IdentityFile = expandTilde(val)
+			}
 		}
 	}
 	if current != nil && current.Name != "*" && !strings.ContainsAny(current.Name, "*?") {
@@ -97,7 +102,7 @@ type Client struct {
 }
 
 func Connect(host Host) (*Client, error) {
-	authMethods, err := authMethods()
+	authMethods, err := buildAuthMethods(host)
 	if err != nil {
 		return nil, err
 	}
@@ -138,26 +143,39 @@ func (c *Client) Close() {
 	c.ssh.Close()
 }
 
-func authMethods() ([]ssh.AuthMethod, error) {
-	// If an SSH agent is available, use it exclusively.
-	// Mixing agent + key files can exceed MaxAuthTries on servers with low
-	// limits (common default is 6); agents like 1Password already select the
-	// right key per host, so adding file keys on top only adds failed attempts.
+// buildAuthMethods returns the auth methods to use for the given host.
+// When SSH_AUTH_SOCK is set, only the agent is used. If the host specifies an
+// IdentityFile, only the agent signer whose public key matches that file is
+// offered — this prevents MaxAuthTries failures on servers with low limits
+// when the agent (e.g. 1Password) holds many keys.
+func buildAuthMethods(host Host) ([]ssh.AuthMethod, error) {
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		conn, err := net.Dial("unix", sock)
 		if err == nil {
-			return []ssh.AuthMethod{
-				ssh.PublicKeysCallback(agent.NewClient(conn).Signers),
-			}, nil
+			agentClient := agent.NewClient(conn)
+			if host.IdentityFile != "" {
+				// Try to read the matching public key to filter agent signers.
+				if method, ok := agentMethodForIdentity(agentClient, host.IdentityFile); ok {
+					return []ssh.AuthMethod{method}, nil
+				}
+			}
+			// No IdentityFile or pub key not readable — offer all agent keys.
+			return []ssh.AuthMethod{ssh.PublicKeysCallback(agentClient.Signers)}, nil
 		}
 	}
 
 	// No agent: fall back to well-known key files.
 	home, _ := os.UserHomeDir()
+	candidates := []string{"id_ed25519", "id_rsa", "id_ecdsa"}
+	if host.IdentityFile != "" {
+		candidates = []string{host.IdentityFile}
+	}
 	var signers []ssh.Signer
-	for _, name := range []string{"id_ed25519", "id_rsa", "id_ecdsa"} {
-		path := filepath.Join(home, ".ssh", name)
-		key, err := os.ReadFile(path)
+	for _, p := range candidates {
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(home, ".ssh", p)
+		}
+		key, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
@@ -172,6 +190,44 @@ func authMethods() ([]ssh.AuthMethod, error) {
 		return nil, fmt.Errorf("no SSH auth methods available (no agent and no key files found)")
 	}
 	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}, nil
+}
+
+// agentMethodForIdentity returns a PublicKeys auth method containing only the
+// agent signer whose public key matches identityFile. Accepts both the private
+// key path (reads the adjacent .pub) and the .pub path directly.
+func agentMethodForIdentity(agentClient agent.ExtendedAgent, identityFile string) (ssh.AuthMethod, bool) {
+	pubKeyFile := identityFile
+	if !strings.HasSuffix(identityFile, ".pub") {
+		pubKeyFile = identityFile + ".pub"
+	}
+	pubKeyBytes, err := os.ReadFile(pubKeyFile)
+	if err != nil {
+		return nil, false
+	}
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(pubKeyBytes)
+	if err != nil {
+		return nil, false
+	}
+	wantFP := ssh.FingerprintSHA256(pubKey)
+
+	signers, err := agentClient.Signers()
+	if err != nil {
+		return nil, false
+	}
+	for _, s := range signers {
+		if ssh.FingerprintSHA256(s.PublicKey()) == wantFP {
+			return ssh.PublicKeys(s), true
+		}
+	}
+	return nil, false
+}
+
+func expandTilde(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, p[2:])
+	}
+	return p
 }
 
 func (c *Client) ListDirs(path string) ([]string, error) {
