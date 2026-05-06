@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ var (
 	spBarStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
 	spStatsStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	spHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	spIconStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
 )
 
 type SyncProgress struct {
@@ -100,10 +102,11 @@ func (m SyncProgress) View() tea.View {
 		b.WriteString("\n")
 	}
 	for _, f := range visible {
+		icon := spIconStyle.Render(fileTypeIcon(f.Path))
 		if f.Err != nil {
-			fmt.Fprintf(&b, "  %s %s\n", spErrStyle.Render("✗"), spErrStyle.Render(f.Path))
+			fmt.Fprintf(&b, "  %s %s %s\n", spErrStyle.Render("✗"), icon, spErrStyle.Render(f.Path))
 		} else {
-			fmt.Fprintf(&b, "  %s %s\n", spOKStyle.Render("✓"), f.Path)
+			fmt.Fprintf(&b, "  %s %s %s\n", spOKStyle.Render("✓"), icon, f.Path)
 		}
 	}
 
@@ -156,6 +159,31 @@ func formatSyncDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// fileTypeIcon returns a Nerd Font glyph matching the file's extension.
+func fileTypeIcon(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if len(ext) > 1 {
+		ext = ext[1:] // strip leading dot
+	}
+	icons := map[string]string{
+		"go":   "",
+		"py":   "",
+		"js":   "",
+		"ts":   "",
+		"md":   "",
+		"json": "",
+		"yaml": "",
+		"yml":  "",
+		"html": "",
+		"css":  "",
+		"rs":   "",
+	}
+	if icon, ok := icons[ext]; ok {
+		return icon
+	}
+	return "" // cod-file fallback
 }
 
 // RunSyncProgress runs the progress TUI, uploading each file via the upload
