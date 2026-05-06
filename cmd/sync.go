@@ -8,7 +8,6 @@ import (
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
-	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -17,15 +16,20 @@ const (
 	iconSyncFail = "✗"
 )
 
+var includeUntracked bool
+
 var syncCmd = &cobra.Command{
 	Use:   "sync [profile]",
-	Short: "Sync git-tracked files to the remote server",
+	Short: " sync changed files to the remote server",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runSync,
 }
 
+func init() {
+	syncCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, "also sync untracked files")
+}
+
 func runSync(cmd *cobra.Command, args []string) error {
-	// Determine profile
 	localCfg, err := config.LoadLocal()
 	if err != nil {
 		return fmt.Errorf("load local config: %w", err)
@@ -49,32 +53,27 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("profile %q not found; run `teleport init` to create it", profileName)
 	}
 
-	log.Info("Sync", "profile", profileName, "host", profile.Host, "path", profile.Path)
-
-	// Collect files
-	tracked, err := git.TrackedFiles()
+	changed, err := git.ChangedFiles()
 	if err != nil {
-		return fmt.Errorf("git ls-files: %w", err)
-	}
-	if len(tracked) == 0 {
-		return fmt.Errorf("no tracked files found (is this a git repository?)")
+		return fmt.Errorf("git diff: %w", err)
 	}
 
-	untracked, err := git.UntrackedFiles()
-	if err != nil {
-		log.Warn("Could not list untracked files", "err", err)
-		untracked = nil
+	if includeUntracked {
+		untracked, err := git.UntrackedFiles()
+		if err != nil {
+			log.Warn("Could not list untracked files", "err", err)
+		} else {
+			changed = append(changed, untracked...)
+		}
 	}
 
-	// File selection TUI
-	files, err := tui.RunFilePicker(tracked, untracked)
-	if err != nil {
-		return err
+	changed = dedupe(changed)
+
+	if len(changed) == 0 {
+		fmt.Println("Nothing to sync — no changes since last commit.")
+		return nil
 	}
 
-	log.Info("Files selected", "count", len(files))
-
-	// Parse SSH hosts to find the matching host entry
 	hosts, err := sshpkg.ParseSSHConfig()
 	if err != nil {
 		return fmt.Errorf("parse ssh config: %w", err)
@@ -89,7 +88,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if targetHost == nil {
-		// Fallback: treat profile.Host as raw hostname
 		targetHost = &sshpkg.Host{
 			Name:     profile.Host,
 			Hostname: profile.Host,
@@ -97,7 +95,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Connect
 	log.Info("Connecting", "host", targetHost.Name)
 	client, err := sshpkg.Connect(*targetHost)
 	if err != nil {
@@ -105,11 +102,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	// Upload files
-	fmt.Printf("\nSyncing %d file(s) to %s:%s\n\n", len(files), profile.Host, profile.Path)
+	fmt.Printf("\nSyncing %d file(s) to %s:%s\n\n", len(changed), profile.Host, profile.Path)
 
 	var failed int
-	for _, f := range files {
+	for _, f := range changed {
 		remotePath := filepath.Join(profile.Path, f)
 		if err := client.UploadFile(f, remotePath); err != nil {
 			log.Error(iconSyncFail+" "+f, "err", err)
@@ -124,6 +120,18 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%d file(s) failed to upload", failed)
 	}
 
-	log.Info("Sync complete", "files", len(files))
+	log.Info("Sync complete", "files", len(changed))
 	return nil
+}
+
+func dedupe(files []string) []string {
+	seen := make(map[string]struct{}, len(files))
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		if _, ok := seen[f]; !ok {
+			seen[f] = struct{}{}
+			out = append(out, f)
+		}
+	}
+	return out
 }

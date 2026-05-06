@@ -10,6 +10,10 @@ func TrackedFiles() ([]string, error) {
 	return runGit("ls-files")
 }
 
+func ChangedFiles() ([]string, error) {
+	return runGit("diff", "--name-only", "HEAD")
+}
+
 func UntrackedFiles() ([]string, error) {
 	return runGit("ls-files", "--others", "--exclude-standard")
 }
