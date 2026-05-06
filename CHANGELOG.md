@@ -4,14 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.1] - 2026-05-06
-
-### Changed
-
-- Relocated the local configuration file to a per-project directory under the user’s home (`~/.config/teleport/projects`) using a SHA256 hash of the current working directory.
-- Updated the `internal/config/config.go` file to support the new configuration storage location.
-- Removed the generation of `.teleport.toml` files in project folders and their corresponding `.gitignore` exclusions.
-
 ## [Unreleased]
 
 ### Added
