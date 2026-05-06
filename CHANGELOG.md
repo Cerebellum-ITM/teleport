@@ -4,14 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.1] - 2026-05-06
-
-### Fixed
-
-- Fixed SSH authentication exhaustion by limiting the keys offered from the SSH agent to those matching the `IdentityFile` defined in `ssh_config`.
-- Improved agent signer selection using fingerprint comparison to filter out non-matching keys.
-- Enhanced `IdentityFile` support by allowing `.pub` file paths.
-
 ## [Unreleased]
 
 ### Added
