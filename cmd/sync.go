@@ -8,19 +8,15 @@ import (
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
-)
-
-const (
-	iconSyncOK   = "✓"
-	iconSyncFail = "✗"
 )
 
 var includeUntracked bool
 
 var syncCmd = &cobra.Command{
 	Use:   "sync [profile]",
-	Short: " sync changed files to the remote server",
+	Short: " sync changed files to the remote server",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runSync,
 }
@@ -102,25 +98,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	fmt.Printf("\nSyncing %d file(s) to %s:%s\n\n", len(changed), profile.Host, profile.Path)
-
-	var failed int
-	for _, f := range changed {
-		remotePath := filepath.Join(profile.Path, f)
-		if err := client.UploadFile(f, remotePath); err != nil {
-			log.Error(iconSyncFail+" "+f, "err", err)
-			failed++
-		} else {
-			fmt.Printf("  %s %s\n", iconSyncOK, f)
-		}
+	header := fmt.Sprintf("Syncing %d file(s) to %s:%s", len(changed), profile.Host, profile.Path)
+	failed, err := tui.RunSyncProgress(header, changed, func(localPath string) error {
+		return client.UploadFile(localPath, filepath.Join(profile.Path, localPath))
+	})
+	if err != nil {
+		return err
 	}
-
-	fmt.Println()
 	if failed > 0 {
 		return fmt.Errorf("%d file(s) failed to upload", failed)
 	}
-
-	log.Info("Sync complete", "files", len(changed))
 	return nil
 }
 
