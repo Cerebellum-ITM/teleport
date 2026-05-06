@@ -33,4 +33,5 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(profilesCmd)
+	rootCmd.AddCommand(versionCmd)
 }
