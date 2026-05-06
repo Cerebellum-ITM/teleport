@@ -123,6 +123,12 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter":
+			// Confirm selection of the current directory.
+			m.chosen = m.cwd
+			return m, tea.Quit
+
+		case "tab", "right":
+			// Descend into the highlighted directory.
 			if len(visible) > 0 {
 				newPath := filepath.Join(m.cwd, visible[m.cursor])
 				m.cwd = newPath
@@ -132,6 +138,19 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, listDirsCmd(m.client, newPath)
 			}
 			return m, nil
+
+		case "shift+tab", "left":
+			// Go up to the parent directory.
+			if m.filter.Value() == "" {
+				parent := filepath.Dir(m.cwd)
+				if parent != m.cwd {
+					m.cwd = parent
+					m.loading = true
+					m.cursor = 0
+					return m, listDirsCmd(m.client, parent)
+				}
+				return m, nil
+			}
 
 		case "backspace":
 			// When the filter is already empty, navigate up one level.
@@ -145,22 +164,6 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-
-		case "left", "h":
-			if m.filter.Value() == "" {
-				parent := filepath.Dir(m.cwd)
-				if parent != m.cwd {
-					m.cwd = parent
-					m.loading = true
-					m.cursor = 0
-					return m, listDirsCmd(m.client, parent)
-				}
-				return m, nil
-			}
-
-		case "s":
-			m.chosen = m.cwd
-			return m, tea.Quit
 		}
 	}
 
@@ -216,7 +219,7 @@ func (m DirPicker) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  ↑/↓ navigate  enter=descend  backspace/h=up  esc=clear filter  s=select  q=quit") + "\n")
+	b.WriteString(dimStyle.Render("  ↑/↓ navigate  tab/→=descend  shift+tab/←=up  enter=select  esc=clear filter  q=quit") + "\n")
 	b.WriteString(selectedStyle.Render("  Selected: "+m.cwd) + "\n")
 
 	return tea.NewView(b.String())

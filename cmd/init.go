@@ -103,7 +103,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Info("Profile saved", "profile", profileName, "host", host.Name, "path", remotePath)
-	fmt.Printf("\nProfile %q configured:\n  host: %s\n  path: %s\n\nAdd .teleport.toml to .gitignore.\n",
+	fmt.Printf("\nProfile %q configured:\n  host: %s\n  path: %s\n",
 		profileName, host.Name, remotePath)
 
 	return nil
