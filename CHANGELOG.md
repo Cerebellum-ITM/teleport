@@ -4,9 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.1] - 2026-05-08
+
+### Changed
+
+- Expanded the build workflow in the Makefile to compile the binary to `./bin/teleport` and copy it to `~/.local/bin` for local development.
+- Introduced new variables `BIN_DIR` and `CMD_PATH` to define the binary output directory and installation path.
+- Added a `build_release` target to produce trimmed-path binaries for various platforms.
+- Updated the `.gitignore` file to exclude the `bin/` directory.
+- Refactored the `uninstall` and `clean` targets to use the new `BIN_DIR` variable.
+
 ## [Unreleased]
 
 ### Added
+- `bin/` added to `.gitignore` — binaries are never committed
+- `Makefile` `build` target now outputs to `./bin/teleport` and hot-copies it to `~/.local/bin` for local dev iteration
+- `Makefile` `build_release` target produces four binaries (`darwin_arm64`, `darwin_amd64`, `linux_amd64`, `linux_arm64`) in `./bin/` with `-trimpath`
 - `teleport sync` progress bar: bubbletea TUI with file log scrolling above and ASCII `[======>   ]` bar pinned to the last three lines of the terminal, showing `N/Total  %  MM:SS`
 - `teleport sync` now uploads only files changed since the last commit (`git diff --name-only HEAD`) instead of all tracked files — removes the file-picker TUI from the normal sync flow
 - `-u`/`--untracked` flag on `teleport sync` to also include untracked files alongside changed tracked files
