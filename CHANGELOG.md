@@ -6,17 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.1.1] - 2026-05-08
 
-### Changed
+### Added
 
-- Expanded the build workflow in the Makefile to compile the binary to `./bin/teleport` and copy it to `~/.local/bin` for local development.
-- Introduced new variables `BIN_DIR` and `CMD_PATH` to define the binary output directory and installation path.
-- Added a `build_release` target to produce trimmed-path binaries for various platforms.
-- Updated the `.gitignore` file to exclude the `bin/` directory.
-- Refactored the `uninstall` and `clean` targets to use the new `BIN_DIR` variable.
+- Added a comprehensive `README.md` that outlines the project description, usage flow, command reference table, installation steps, SSH authentication setup, configuration profiles, and the tech stack.
+- Documented installation commands and required build targets in the `README.md`.
+- Listed supported tech-stack components and their versions in the `README.md`.
+- Provided guidance on SSH key handling and profile configuration in the `README.md`.
 
 ## [Unreleased]
 
 ### Added
+- `README.md` — project overview, commands, installation, SSH auth, and configuration reference
 - `bin/` added to `.gitignore` — binaries are never committed
 - `Makefile` `build` target now outputs to `./bin/teleport` and hot-copies it to `~/.local/bin` for local dev iteration
 - `Makefile` `build_release` target produces four binaries (`darwin_arm64`, `darwin_amd64`, `linux_amd64`, `linux_arm64`) in `./bin/` with `-trimpath`
