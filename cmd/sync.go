@@ -54,12 +54,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("git diff: %w", err)
 	}
 
-	if includeUntracked {
+	effectiveUntracked := includeUntracked || localCfg.SyncUntracked
+	var skippedUntracked int
+
+	if effectiveUntracked {
 		untracked, err := git.UntrackedFiles()
 		if err != nil {
 			log.Warn("Could not list untracked files", "err", err)
 		} else {
 			changed = append(changed, untracked...)
+		}
+	} else {
+		untracked, err := git.UntrackedFiles()
+		if err == nil {
+			skippedUntracked = len(untracked)
 		}
 	}
 
@@ -107,6 +115,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d file(s) failed to upload", failed)
+	}
+	if skippedUntracked > 0 {
+		log.Warn(
+			fmt.Sprintf("%d untracked file(s) not included", skippedUntracked),
+			"hint", "use -u, or `teleport config set sync-untracked true`",
+		)
 	}
 	return nil
 }

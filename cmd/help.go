@@ -67,6 +67,7 @@ func printHelp() {
 		{iconGear, "init", "configure a sync profile (SSH host + remote directory)"},
 		{iconSync, "sync", "sync changed files to the remote server"},
 		{iconPerson, "profiles", "list configured sync profiles"},
+		{iconGear, "config", "get/set per-directory defaults (e.g. sync-untracked)"},
 		{iconTag, "version", "print version information"},
 	}
 
@@ -84,6 +85,7 @@ func printHelp() {
 		{"teleport -i", "run interactive profile setup"},
 		{"teleport -p", "list all profiles"},
 		{"teleport sync staging", "sync using a specific profile"},
+		{"teleport config set sync-untracked true", "remember -u for this wd"},
 	}
 
 	var b strings.Builder

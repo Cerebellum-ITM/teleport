@@ -25,6 +25,7 @@ type GlobalConfig struct {
 
 type LocalConfig struct {
 	DefaultProfile string `toml:"default_profile"`
+	SyncUntracked  bool   `toml:"sync_untracked,omitempty"`
 }
 
 func GlobalConfigPath() (string, error) {

@@ -22,6 +22,7 @@ Update this file after every meaningful implementation change.
 - `cmd/sync` — file picker TUI → SFTP upload with per-file ✓/✗ log
 - `cmd/profiles` — list profiles with local default marked
 - `cmd/root` + `main.go` — cobra wiring, `-v` flag, binary entry point
+- **Unit 03 — sync flag defaults**: `LocalConfig.SyncUntracked`, `teleport config get|set|unset` subcommand, and post-sync warning when untracked files are skipped (`context/specs/03-sync-flag-defaults.md`)
 
 ## In Progress
 
@@ -49,3 +50,4 @@ Update this file after every meaningful implementation change.
 - Initial implementation produced 2026-05-06.
 - All 14 files committed in a single `[ADD] teleport` root commit (hash `1fbf8f2`).
 - Context files scaffolded via `/spec-driven-dev init --from-code` in the same session.
+- 2026-05-12 — Unit 03 implemented: warning emitted **after** the sync TUI exits (rendering full-height inline view would otherwise scroll the warning off-screen if printed before).
