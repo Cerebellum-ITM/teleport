@@ -13,11 +13,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var beamThenSync bool
+
 var beamCmd = &cobra.Command{
 	Use:   "beam [profile]",
 	Short: "󰜘 send selected local commits to the remote server",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runBeam,
+}
+
+func init() {
+	beamCmd.Flags().BoolVarP(&beamThenSync, "then-sync", "s", false, "run sync after beam (working-tree changes over the just-beamed snapshot)")
 }
 
 func runBeam(cmd *cobra.Command, args []string) error {
@@ -165,6 +171,46 @@ func runBeam(cmd *cobra.Command, args []string) error {
 
 	if failures > 0 {
 		return fmt.Errorf("%d operation(s) failed", failures)
+	}
+
+	if beamThenSync {
+		if err := runChainedSync(client, profile, localCfg.SyncUntracked); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntracked bool) error {
+	changed, err := git.ChangedFiles()
+	if err != nil {
+		return fmt.Errorf("git diff: %w", err)
+	}
+
+	if includeUntracked {
+		untracked, err := git.UntrackedFiles()
+		if err != nil {
+			log.Warn("Could not list untracked files", "err", err)
+		} else {
+			changed = append(changed, untracked...)
+		}
+	}
+
+	changed = dedupe(changed)
+	if len(changed) == 0 {
+		fmt.Println("Sync stage: nothing to sync — working tree matches HEAD.")
+		return nil
+	}
+
+	header := fmt.Sprintf("Syncing %d working-tree file(s) to %s:%s", len(changed), profile.Host, profile.Path)
+	failed, err := tui.RunSyncProgress(header, changed, func(localPath string) error {
+		return client.UploadFile(localPath, filepath.Join(profile.Path, localPath))
+	})
+	if err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d file(s) failed to upload in sync stage", failed)
 	}
 	return nil
 }

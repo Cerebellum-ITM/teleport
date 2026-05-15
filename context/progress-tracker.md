@@ -53,3 +53,4 @@ Update this file after every meaningful implementation change.
 - Context files scaffolded via `/spec-driven-dev init --from-code` in the same session.
 - 2026-05-12 — Unit 03 implemented: warning emitted **after** the sync TUI exits (rendering full-height inline view would otherwise scroll the warning off-screen if printed before).
 - 2026-05-15 — Unit 04 implemented: `teleport beam`. Per-file content fetched with `git show <sha>:<path>` from the most-recent selected commit that touched the file; deletes via `SFTP.Remove` (idempotent on missing). Reused existing `SyncProgress` TUI for the upload phase.
+- 2026-05-15 — Added `--then-sync`/`-s` flag to `beam`: chains a working-tree sync on the same SSH connection after the beam phase succeeds. Order is fixed (beam → sync) so disk content always wins over the beamed blob.

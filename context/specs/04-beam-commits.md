@@ -185,6 +185,25 @@ var beamCmd = &cobra.Command{
 Registrar el comando con `rootCmd.AddCommand(beamCmd)` en `cmd/root.go`,
 siguiendo el patrón actual.
 
+### `cmd/beam.go` — flag de encadenamiento
+
+Bandera local `--then-sync` / `-s` (booleana, default `false`). Cuando
+está activa y la fase beam termina sin failures, ejecuta una fase sync
+reusando el mismo `*sshpkg.Client` (ahorra reconexión). La fase sync
+replica el flujo de `cmd/sync.go`:
+
+- `git.ChangedFiles()` para obtener archivos del working tree vs HEAD
+- Suma `git.UntrackedFiles()` sólo si `localCfg.SyncUntracked` está en
+  `true` (no se agrega `-u` propio a `beam` para no inflar la API; el
+  usuario persiste el default vía `teleport config set sync-untracked
+  true` si lo necesita)
+- Reusa `tui.RunSyncProgress` con `client.UploadFile`
+
+Orden garantizado: beam primero (snapshot histórico de commits), sync
+después (working tree gana). Si un archivo está en ambas fases, el
+contenido en disco sobrescribe al blob del commit, que es la semántica
+natural.
+
 ### `cmd/help.go` — actualizar
 
 Añadir `beam` a la lista de comandos en el help personalizado.
