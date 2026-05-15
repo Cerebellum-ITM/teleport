@@ -22,6 +22,7 @@ outside this file.
 | Unselected toggle     | `lipgloss.Color("214")`   | Orange/amber          |
 | Dim / secondary text  | `lipgloss.Color("241")`   | Grey                  |
 | Tracked file text     | `lipgloss.Color("241")`   | Grey (same as dim)    |
+| Delete / warning      | `lipgloss.Color("203")`   | Red-orange            |
 
 ## Typography
 
@@ -51,6 +52,8 @@ elsewhere.
 | `iconSync`    | `󰒃 ` | Sync in progress (reserved)   |
 | `iconSyncOK`  | `✓`  | File uploaded successfully    |
 | `iconSyncFail`| `✗`  | File upload failed            |
+| `iconCommit`  | `󰜘 ` | Commit entry in commit picker |
+| `iconDelete`  | `󰮈 ` | File flagged for deletion in beam |
 
 ## Component Patterns
 

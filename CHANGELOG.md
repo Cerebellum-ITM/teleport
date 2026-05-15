@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `teleport beam` subcommand — pick local commits ahead of upstream and send their file contents to the remote (cherry-pick style). Multi-select TUI for commits + file picker pre-selected; honors per-commit file content via `git show`, removes deleted files on remote.
 - `teleport config get|set|unset` subcommand to persist per-working-directory defaults (currently `sync-untracked` and `default-profile`) in the existing local TOML
 - `sync_untracked` field in `LocalConfig`; when `true`, `teleport sync` includes untracked files without requiring `-u`
 - `teleport sync` warns when untracked files exist and were not included, suggesting `-u` or persisting the default via `teleport config set sync-untracked true`

@@ -62,4 +62,5 @@ func init() {
 	rootCmd.AddCommand(profilesCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(beamCmd)
 }

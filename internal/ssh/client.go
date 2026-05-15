@@ -267,3 +267,32 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 	}
 	return nil
 }
+
+// UploadBytes writes content to remotePath, creating parent directories.
+func (c *Client) UploadBytes(remotePath string, content []byte) error {
+	if err := c.SFTP.MkdirAll(filepath.Dir(remotePath)); err != nil {
+		return fmt.Errorf("mkdir remote %s: %w", filepath.Dir(remotePath), err)
+	}
+
+	dst, err := c.SFTP.Create(remotePath)
+	if err != nil {
+		return fmt.Errorf("create remote %s: %w", remotePath, err)
+	}
+	defer dst.Close()
+
+	if _, err := dst.Write(content); err != nil {
+		return fmt.Errorf("write %s: %w", remotePath, err)
+	}
+	return nil
+}
+
+// Remove deletes remotePath. Missing files are not an error.
+func (c *Client) Remove(remotePath string) error {
+	if err := c.SFTP.Remove(remotePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("remove %s: %w", remotePath, err)
+	}
+	return nil
+}

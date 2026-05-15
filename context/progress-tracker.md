@@ -23,6 +23,7 @@ Update this file after every meaningful implementation change.
 - `cmd/profiles` — list profiles with local default marked
 - `cmd/root` + `main.go` — cobra wiring, `-v` flag, binary entry point
 - **Unit 03 — sync flag defaults**: `LocalConfig.SyncUntracked`, `teleport config get|set|unset` subcommand, and post-sync warning when untracked files are skipped (`context/specs/03-sync-flag-defaults.md`)
+- **Unit 04 — beam (commit-driven sync)**: `teleport beam` subcommand, commit picker + beam file picker TUIs, `git.CommitsAhead/FilesInCommits/FileAtCommit`, `ssh.UploadBytes/Remove` (`context/specs/04-beam-commits.md`)
 
 ## In Progress
 
@@ -51,3 +52,4 @@ Update this file after every meaningful implementation change.
 - All 14 files committed in a single `[ADD] teleport` root commit (hash `1fbf8f2`).
 - Context files scaffolded via `/spec-driven-dev init --from-code` in the same session.
 - 2026-05-12 — Unit 03 implemented: warning emitted **after** the sync TUI exits (rendering full-height inline view would otherwise scroll the warning off-screen if printed before).
+- 2026-05-15 — Unit 04 implemented: `teleport beam`. Per-file content fetched with `git show <sha>:<path>` from the most-recent selected commit that touched the file; deletes via `SFTP.Remove` (idempotent on missing). Reused existing `SyncProgress` TUI for the upload phase.
