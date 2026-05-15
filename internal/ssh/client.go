@@ -2,7 +2,10 @@ package ssh
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -284,6 +287,25 @@ func (c *Client) UploadBytes(remotePath string, content []byte) error {
 		return fmt.Errorf("write %s: %w", remotePath, err)
 	}
 	return nil
+}
+
+// RemoteSHA256 streams remotePath and returns its lowercase hex SHA256.
+// When the file does not exist, returns ("", os.ErrNotExist).
+func (c *Client) RemoteSHA256(remotePath string) (string, error) {
+	f, err := c.SFTP.Open(remotePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", os.ErrNotExist
+		}
+		return "", fmt.Errorf("open remote %s: %w", remotePath, err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("read remote %s: %w", remotePath, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Remove deletes remotePath. Missing files are not an error.

@@ -24,6 +24,7 @@ Update this file after every meaningful implementation change.
 - `cmd/root` + `main.go` — cobra wiring, `-v` flag, binary entry point
 - **Unit 03 — sync flag defaults**: `LocalConfig.SyncUntracked`, `teleport config get|set|unset` subcommand, and post-sync warning when untracked files are skipped (`context/specs/03-sync-flag-defaults.md`)
 - **Unit 04 — beam (commit-driven sync)**: `teleport beam` subcommand, commit picker + beam file picker TUIs, `git.CommitsAhead/FilesInCommits/FileAtCommit`, `ssh.UploadBytes/Remove` (`context/specs/04-beam-commits.md`)
+- **Unit 05 — status**: `teleport status [profile]` with `--pending`/`-p`, `ssh.Client.RemoteSHA256`, full and pending-mode classification (`==`, `!=`, `??`, `--`), exit code 1 on drift (`context/specs/05-status.md`)
 
 ## In Progress
 
@@ -54,3 +55,4 @@ Update this file after every meaningful implementation change.
 - 2026-05-12 — Unit 03 implemented: warning emitted **after** the sync TUI exits (rendering full-height inline view would otherwise scroll the warning off-screen if printed before).
 - 2026-05-15 — Unit 04 implemented: `teleport beam`. Per-file content fetched with `git show <sha>:<path>` from the most-recent selected commit that touched the file; deletes via `SFTP.Remove` (idempotent on missing). Reused existing `SyncProgress` TUI for the upload phase.
 - 2026-05-15 — Added `--then-sync`/`-s` flag to `beam`: chains a working-tree sync on the same SSH connection after the beam phase succeeds. Order is fixed (beam → sync) so disk content always wins over the beamed blob.
+- 2026-05-15 — Unit 05 implemented: `teleport status`. SHA256 streamed over SFTP per file; no remote state persisted. `--pending` reuses `git.CommitsAhead`/`FilesInCommits` and flags `'D'` paths still present on the remote with `--`.

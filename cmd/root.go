@@ -63,4 +63,5 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(beamCmd)
+	rootCmd.AddCommand(statusCmd)
 }
