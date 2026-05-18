@@ -64,4 +64,5 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(beamCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(cleanCmd)
 }

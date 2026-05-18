@@ -68,6 +68,7 @@ func printHelp() {
 		{iconSync, "sync", "sync changed files to the remote server"},
 		{iconSync, "beam", "send selected local commits (cherry-pick style)"},
 		{iconGear, "status", "compare local files against the remote (SHA256)"},
+		{iconSync, "clean", "discard dirty changes on the remote (git checkout + git clean)"},
 		{iconPerson, "profiles", "list configured sync profiles"},
 		{iconGear, "config", "get/set per-directory defaults (e.g. sync-untracked)"},
 		{iconTag, "version", "print version information"},
@@ -88,6 +89,8 @@ func printHelp() {
 		{"teleport -p", "list all profiles"},
 		{"teleport sync staging", "sync using a specific profile"},
 		{"teleport beam", "pick local commits to send"},
+		{"teleport beam -cs", "clean remote → beam commits → sync working tree"},
+		{"teleport clean", "discard dirty changes on the remote"},
 		{"teleport status -p", "verify pending work matches the remote"},
 		{"teleport config set sync-untracked true", "remember -u for this wd"},
 	}

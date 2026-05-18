@@ -318,3 +318,32 @@ func (c *Client) Remove(remotePath string) error {
 	}
 	return nil
 }
+
+// RunCommand executes cmd on the remote host through a fresh SSH session
+// and returns its stdout. If the command exits non-zero, stderr is wrapped
+// into the returned error.
+func (c *Client) RunCommand(cmd string) (string, error) {
+	sess, err := c.ssh.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("ssh session: %w", err)
+	}
+	defer sess.Close()
+
+	var stdout, stderr strings.Builder
+	sess.Stdout = &stdout
+	sess.Stderr = &stderr
+
+	if err := sess.Run(cmd); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return stdout.String(), fmt.Errorf("%s: %w", msg, err)
+		}
+		return stdout.String(), err
+	}
+	return stdout.String(), nil
+}
+
+// ShellQuote wraps s in single quotes safe for POSIX shells.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

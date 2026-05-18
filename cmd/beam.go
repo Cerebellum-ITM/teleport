@@ -13,7 +13,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var beamThenSync bool
+var (
+	beamThenSync bool
+	beamClean    bool
+	beamYes      bool
+)
 
 var beamCmd = &cobra.Command{
 	Use:   "beam [profile]",
@@ -24,6 +28,8 @@ var beamCmd = &cobra.Command{
 
 func init() {
 	beamCmd.Flags().BoolVarP(&beamThenSync, "then-sync", "s", false, "run sync after beam (working-tree changes over the just-beamed snapshot)")
+	beamCmd.Flags().BoolVarP(&beamClean, "clean", "c", false, "run clean before beam (discard dirty changes on the remote)")
+	beamCmd.Flags().BoolVarP(&beamYes, "yes", "y", false, "skip the clean confirmation prompt")
 }
 
 func runBeam(cmd *cobra.Command, args []string) error {
@@ -32,33 +38,48 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load local config: %w", err)
 	}
 
-	profileName := localCfg.DefaultProfile
-	if len(args) > 0 {
-		profileName = args[0]
-	}
-	if profileName == "" {
-		return fmt.Errorf("no profile specified; run `teleport init` first or pass a profile name")
-	}
-
-	globalCfg, err := config.LoadGlobal()
+	profile, _, err := resolveProfile(args)
 	if err != nil {
-		return fmt.Errorf("load global config: %w", err)
+		return err
 	}
 
-	profile, ok := globalCfg.Profiles[profileName]
-	if !ok {
-		return fmt.Errorf("profile %q not found; run `teleport init` to create it", profileName)
+	// If --clean is set, connect now and run the clean phase before
+	// anything else. The connection is reused by the beam phase.
+	var client *sshpkg.Client
+	if beamClean {
+		client, err = connectToProfile(profile)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if client != nil {
+				client.Close()
+			}
+		}()
+		counts, err := cleanRemote(client, profile, beamYes, false)
+		if err != nil {
+			return err
+		}
+		if counts.Skipped {
+			fmt.Println("aborted, no changes made")
+			return nil
+		}
 	}
 
 	commits, err := git.CommitsAhead()
 	if err != nil {
 		if errors.Is(err, git.ErrNoUpstream) {
+			if beamClean {
+				return nil // clean already ran; nothing else to do
+			}
 			return fmt.Errorf("beam requires an upstream branch (try `git push -u origin <branch>`)")
 		}
 		return err
 	}
 	if len(commits) == 0 {
-		fmt.Println("Nothing to beam — no local commits ahead of upstream.")
+		if !beamClean {
+			fmt.Println("Nothing to beam — no local commits ahead of upstream.")
+		}
 		return nil
 	}
 
@@ -96,33 +117,13 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	hosts, err := sshpkg.ParseSSHConfig()
-	if err != nil {
-		return fmt.Errorf("parse ssh config: %w", err)
-	}
-
-	var targetHost *sshpkg.Host
-	for _, h := range hosts {
-		if h.Name == profile.Host {
-			hCopy := h
-			targetHost = &hCopy
-			break
+	if client == nil {
+		client, err = connectToProfile(profile)
+		if err != nil {
+			return err
 		}
+		defer client.Close()
 	}
-	if targetHost == nil {
-		targetHost = &sshpkg.Host{
-			Name:     profile.Host,
-			Hostname: profile.Host,
-			Port:     "22",
-		}
-	}
-
-	log.Info("Connecting", "host", targetHost.Name)
-	client, err := sshpkg.Connect(*targetHost)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", targetHost.Name, err)
-	}
-	defer client.Close()
 
 	var toUpload []git.FileChange
 	var toDelete []git.FileChange
