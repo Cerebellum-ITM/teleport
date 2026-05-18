@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Sync progress icon map expanded: dedicated Nerd Font glyphs for `xml`, `svg`, `toml`, `ini`, `env`, `conf`, `cfg`, `lock`, shells (`sh`/`bash`/`zsh`/`fish`/`ps1`/`bat`), frontend (`jsx`/`tsx`/`vue`/`svelte`/`scss`/`sass`/`less`), languages (`c`/`h`/`cpp`/`cc`/`hpp`/`java`/`kt`/`swift`/`rb`/`php`/`lua`/`dart`/`ex`/`exs`), data (`sql`/`csv`/`tsv`/`db`/`sqlite`), text (`txt`/`log`/`rst`), images (`png`/`jpg`/`jpeg`/`gif`/`webp`/`ico`/`bmp`), archives (`zip`/`tar`/`gz`/`tgz`/`7z`/`rar`/`pdf`/`exe`/`bin`), plus full-basename matches for `Dockerfile`, `Makefile`, `.gitignore`, `.gitattributes`, `.gitmodules`.
 - `teleport status [profile]` subcommand — compares local files against the remote via SHA256 over SFTP and reports drift. Default mode checks all `git ls-files`; `--pending`/`-p` checks only files in commits ahead of upstream + working-tree changes (+ untracked when persisted), and flags remote files that should have been deleted by a beamed commit.
 - `teleport beam` subcommand — pick local commits ahead of upstream and send their file contents to the remote (cherry-pick style). Multi-select TUI for commits + file picker pre-selected; honors per-commit file content via `git show`, removes deleted files on remote.
 - `teleport beam --then-sync` / `-s` — after beaming the selected commits, run a working-tree sync over the same SSH connection so dirty (uncommitted) changes overwrite the beamed snapshot.

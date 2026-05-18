@@ -25,6 +25,7 @@ Update this file after every meaningful implementation change.
 - **Unit 03 — sync flag defaults**: `LocalConfig.SyncUntracked`, `teleport config get|set|unset` subcommand, and post-sync warning when untracked files are skipped (`context/specs/03-sync-flag-defaults.md`)
 - **Unit 04 — beam (commit-driven sync)**: `teleport beam` subcommand, commit picker + beam file picker TUIs, `git.CommitsAhead/FilesInCommits/FileAtCommit`, `ssh.UploadBytes/Remove` (`context/specs/04-beam-commits.md`)
 - **Unit 05 — status**: `teleport status [profile]` with `--pending`/`-p`, `ssh.Client.RemoteSHA256`, full and pending-mode classification (`==`, `!=`, `??`, `--`), exit code 1 on drift (`context/specs/05-status.md`)
+- **Unit 06 — file icons**: extended `fileTypeIcon` in `internal/tui/syncprogress.go` with Nerd Font glyphs for ~60 extensions plus basename matches for `Dockerfile`/`Makefile`/`.gitignore` (`context/specs/06-file-icons.md`)
 
 ## In Progress
 
@@ -56,3 +57,4 @@ Update this file after every meaningful implementation change.
 - 2026-05-15 — Unit 04 implemented: `teleport beam`. Per-file content fetched with `git show <sha>:<path>` from the most-recent selected commit that touched the file; deletes via `SFTP.Remove` (idempotent on missing). Reused existing `SyncProgress` TUI for the upload phase.
 - 2026-05-15 — Added `--then-sync`/`-s` flag to `beam`: chains a working-tree sync on the same SSH connection after the beam phase succeeds. Order is fixed (beam → sync) so disk content always wins over the beamed blob.
 - 2026-05-15 — Unit 05 implemented: `teleport status`. SHA256 streamed over SFTP per file; no remote state persisted. `--pending` reuses `git.CommitsAhead`/`FilesInCommits` and flags `'D'` paths still present on the remote with `--`.
+- 2026-05-18 — Unit 06 implemented: expanded `fileTypeIcon` map. Codepoints chosen via the `nerd-fonts` skill (seti-*, dev-*, md-*, cod-*, custom-elixir). Basename switch handles `Dockerfile`, `Makefile`, `.gitignore`/`.gitattributes`/`.gitmodules` before the extension lookup. Fallback unchanged (cod-file).

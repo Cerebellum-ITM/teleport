@@ -161,16 +161,28 @@ func formatSyncDuration(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
-// fileTypeIcon returns a Nerd Font glyph matching the file's extension.
+// fileTypeIcon returns a Nerd Font glyph matching the file's extension
+// (or full basename for files like Dockerfile / Makefile / .gitignore).
 func fileTypeIcon(path string) string {
+	base := strings.ToLower(filepath.Base(path))
+	switch base {
+	case "dockerfile":
+		return ""
+	case "makefile":
+		return ""
+	case ".gitignore", ".gitattributes", ".gitmodules":
+		return ""
+	}
+
 	ext := strings.ToLower(filepath.Ext(path))
 	if len(ext) > 1 {
 		ext = ext[1:] // strip leading dot
 	}
 	icons := map[string]string{
-		"go":   "",
+		// originals
+		"go":   "",
 		"py":   "",
-		"js":   "",
+		"js":   "",
 		"ts":   "",
 		"md":   "",
 		"json": "",
@@ -179,6 +191,79 @@ func fileTypeIcon(path string) string {
 		"html": "",
 		"css":  "",
 		"rs":   "",
+
+		// markup / config / shell
+		"xml":  "",
+		"svg":  "",
+		"toml": "",
+		"ini":  "",
+		"env":  "󰒓",
+		"conf": "",
+		"cfg":  "",
+		"lock": "󰈡",
+		"sh":   "",
+		"bash": "",
+		"zsh":  "",
+		"fish": "",
+		"ps1":  "󰨊",
+		"bat":  "",
+
+		// frontend
+		"jsx":    "",
+		"tsx":    "",
+		"vue":    "󰡄",
+		"svelte": "",
+		"scss":   "",
+		"sass":   "",
+		"less":   "",
+
+		// languages
+		"c":     "",
+		"h":     "",
+		"cpp":   "",
+		"cc":    "",
+		"hpp":   "",
+		"java":  "",
+		"kt":    "󱈙",
+		"swift": "󰛥",
+		"rb":    "",
+		"php":   "",
+		"lua":   "",
+		"dart":  "",
+		"ex":    "",
+		"exs":   "",
+
+		// data
+		"sql":    "󰆼",
+		"csv":    "",
+		"tsv":    "",
+		"db":     "󰆼",
+		"sqlite": "󰆼",
+
+		// text / logs
+		"txt": "󰈚",
+		"log": "",
+		"rst": "󰧮",
+
+		// images
+		"png":  "󰈟",
+		"jpg":  "󰈟",
+		"jpeg": "󰈟",
+		"gif":  "󰈟",
+		"webp": "󰈟",
+		"ico":  "󰈟",
+		"bmp":  "󰈟",
+
+		// archives / binaries
+		"zip": "󰗄",
+		"tar": "󰗄",
+		"gz":  "󰗄",
+		"tgz": "󰗄",
+		"7z":  "󰗄",
+		"rar": "󰗄",
+		"pdf": "󰈦",
+		"exe": "󰣆",
+		"bin": "",
 	}
 	if icon, ok := icons[ext]; ok {
 		return icon
