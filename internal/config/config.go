@@ -143,3 +143,7 @@ func (g *GlobalConfig) SetProfile(name string, p Profile) {
 	}
 	g.Profiles[name] = p
 }
+
+func (g *GlobalConfig) RemoveProfile(name string) {
+	delete(g.Profiles, name)
+}

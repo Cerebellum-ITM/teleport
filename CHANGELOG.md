@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `teleport profiles remove <name>` (alias `rm`) removes a profile from the global config. Exits with a clear error and hint when the profile does not exist. Emits a warning (but does not modify the local config) when the removed profile was the `default-profile` of the current directory. Implemented via `GlobalConfig.RemoveProfile` in `internal/config` and a new `profilesRemoveCmd` in `cmd/profiles.go`.
 - SSH password auth fallback: when no SSH agent is running and no key files are found, all commands that connect to a remote server now prompt for a password instead of aborting. Implemented via `ErrNoAuthMethods` sentinel in `internal/ssh`, `ConnectWithPassword`, and `connectToHost`/`promptPassword` helpers in `cmd/`.
 - `teleport config` and subcommands (`get`, `set`, `unset`) now render styled help with badge title, section headers, Nerd Font icons, and a `Config keys` table — replaces cobra's plain-text default.
 - `teleport config get` (no args) shows the active profile with resolved `host` and `path`, plus `last sync` in absolute and human-relative format (Spanish, e.g. "hace 4 horas"). A single-key invocation (`config get default-profile`) still prints only the raw value for scripting compatibility.

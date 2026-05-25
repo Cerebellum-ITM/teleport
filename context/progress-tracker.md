@@ -29,6 +29,7 @@ Update this file after every meaningful implementation change.
 - **Unit 07 — clean**: `teleport clean [profile]` discards dirty changes on the remote git work tree (`git checkout -- . && git clean -fd`), with `--ignored`/`-x` to also wipe gitignored files; `beam --clean`/`-c` chains it before the beam (`beam -cs` = clean → beam → sync); new `ssh.Client.RunCommand` + `ssh.ShellQuote` helpers; new `tui.RunCleanConfirm` (`context/specs/07-clean.md`)
 - **Unit 08 — config polish**: extracted reusable `helpDoc`/`renderHelp` in `cmd/help.go` and applied styled help (badge title, sections, Nerd Font icons, Examples, new `Config keys` table) to `teleport config` and `get|set|unset`; `teleport -h` output stays byte-identical; `teleport config get` (no args) now shows the resolved profile (host:path), explicit `<unset>` / `(from global)` / `(not found in global config)` states, and a `last sync` block with absolute timestamp + Spanish humanized "hace …"; `LocalConfig.LastSync time.Time` + `config.TouchLastSync()` persisted on successful `sync`, `beam`, and `clean`; `config get <key>` unchanged for scripts (`context/specs/08-config-polish.md`)
 - **Unit 09 — SSH password auth**: `ErrNoAuthMethods` sentinel in `internal/ssh/client.go`; `ConnectWithPassword(host, pw)`; `connectToHost` in `cmd/clean.go` catches the sentinel and calls `promptPassword` (masked `huh` input); `connectToProfile` delegates to `connectToHost`; `init`, `sync`, `status` migrated to use the shared helpers — all commands now fall back to password prompt when no key/agent is available (`context/specs/09-ssh-password-auth.md`)
+- **Unit 10 — Remove profile**: `teleport profiles remove <name>` (alias `rm`) elimina un profile del global config; `GlobalConfig.RemoveProfile` helper en `internal/config/config.go`; warning si el profile eliminado era el `default-profile` del local config actual, sin modificar el local config (`context/specs/10-remove-profile.md`)
 
 ## In Progress
 
@@ -36,7 +37,7 @@ Update this file after every meaningful implementation change.
 
 ## Next Up
 
-- **Unit 10 — Remove profile**: `teleport profiles remove <name>` elimina un profile del global config (`context/specs/10-remove-profile.md`)
+- (sin unidad planificada)
 
 ## Open Questions
 
