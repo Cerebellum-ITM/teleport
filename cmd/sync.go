@@ -122,6 +122,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 			"hint", "use -u, or `teleport config set sync-untracked true`",
 		)
 	}
+	if err := config.TouchLastSync(); err != nil {
+		log.Warn("could not update last sync timestamp", "err", err)
+	}
 	return nil
 }
 

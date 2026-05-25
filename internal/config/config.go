@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -24,8 +25,9 @@ type GlobalConfig struct {
 }
 
 type LocalConfig struct {
-	DefaultProfile string `toml:"default_profile"`
-	SyncUntracked  bool   `toml:"sync_untracked,omitempty"`
+	DefaultProfile string    `toml:"default_profile"`
+	SyncUntracked  bool      `toml:"sync_untracked,omitempty"`
+	LastSync       time.Time `toml:"last_sync,omitempty"`
 }
 
 func GlobalConfigPath() (string, error) {
@@ -122,6 +124,17 @@ func SaveLocal(cfg *LocalConfig) error {
 	defer f.Close()
 
 	return toml.NewEncoder(f).Encode(cfg)
+}
+
+// TouchLastSync sets LastSync = time.Now() on the local config and
+// persists it. Safe to call on a fresh wd (creates the file).
+func TouchLastSync() error {
+	cfg, err := LoadLocal()
+	if err != nil {
+		return err
+	}
+	cfg.LastSync = time.Now()
+	return SaveLocal(cfg)
 }
 
 func (g *GlobalConfig) SetProfile(name string, p Profile) {

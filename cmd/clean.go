@@ -63,6 +63,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 	if counts.Reverted+counts.Removed+counts.Restored+counts.RemovedIgnored == 0 {
 		// already-clean message printed inside cleanRemote
+		if err := config.TouchLastSync(); err != nil {
+			log.Warn("could not update last sync timestamp", "err", err)
+		}
 		return nil
 	}
 
@@ -78,6 +81,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 	if counts.RemovedIgnored > 0 {
 		fmt.Printf("  removed (ignored): %d file(s)\n", counts.RemovedIgnored)
+	}
+	if err := config.TouchLastSync(); err != nil {
+		log.Warn("could not update last sync timestamp", "err", err)
 	}
 	return nil
 }

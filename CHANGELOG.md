@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `teleport config` and subcommands (`get`, `set`, `unset`) now render styled help with badge title, section headers, Nerd Font icons, and a `Config keys` table — replaces cobra's plain-text default.
+- `teleport config get` (no args) shows the active profile with resolved `host` and `path`, plus `last sync` in absolute and human-relative format (Spanish, e.g. "hace 4 horas"). A single-key invocation (`config get default-profile`) still prints only the raw value for scripting compatibility.
+- `LastSync time.Time` field added to `LocalConfig` (persisted as `last_sync` in TOML); `TouchLastSync()` helper updates it atomically.
+- `teleport sync`, `teleport beam`, and `teleport clean` call `TouchLastSync()` on successful completion so `config get` always reflects the last remote interaction.
+- `humanizeSince` helper in the `cmd` package renders Spanish relative timestamps with cutoffs: seconds / minutes / hours / days / absolute date.
 - `teleport clean [profile]` subcommand — discards dirty changes on the remote git working tree by running `git checkout -- .` and `git clean -fd` over SSH. Validates that `profile.Path` is a git work tree (`git rev-parse --is-inside-work-tree`); aborts with a hint if not. Renders a confirmation TUI grouping changes by *revert* (modified), *remove* (untracked), *restore* (deleted), and *remove ignored* (only with `-x`). Flags: `--yes`/`-y` to skip the prompt, `--ignored`/`-x` to also delete gitignored files (passes `-x` to `git clean`).
 - `teleport beam --clean`/`-c` — runs the same clean phase before the beam (using the same SSH session); `beam -cs` chains clean → beam → sync. `beam -y` skips the clean prompt. Works without commits ahead of upstream (acts as a pure clean).
 - `internal/ssh.Client.RunCommand` — execute a remote command over a fresh SSH session, returning stdout and wrapping stderr into the error.

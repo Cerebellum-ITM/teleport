@@ -179,6 +179,9 @@ func runBeam(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
+	if err := config.TouchLastSync(); err != nil {
+		log.Warn("could not update last sync timestamp", "err", err)
+	}
 	return nil
 }
 
