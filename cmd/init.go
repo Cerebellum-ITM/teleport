@@ -67,10 +67,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	log.Info("Connecting", "host", host.Name)
-	client, err := sshpkg.Connect(*host)
+	client, err := connectToHost(*host)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", host.Name, err)
+		return err
 	}
 	defer client.Close()
 	log.Info("Connected", "host", host.Name)

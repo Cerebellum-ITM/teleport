@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
-	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -78,31 +77,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	hosts, err := sshpkg.ParseSSHConfig()
+	client, err := connectToProfile(profile)
 	if err != nil {
-		return fmt.Errorf("parse ssh config: %w", err)
-	}
-
-	var targetHost *sshpkg.Host
-	for _, h := range hosts {
-		if h.Name == profile.Host {
-			hCopy := h
-			targetHost = &hCopy
-			break
-		}
-	}
-	if targetHost == nil {
-		targetHost = &sshpkg.Host{
-			Name:     profile.Host,
-			Hostname: profile.Host,
-			Port:     "22",
-		}
-	}
-
-	log.Info("Connecting", "host", targetHost.Name)
-	client, err := sshpkg.Connect(*targetHost)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", targetHost.Name, err)
+		return err
 	}
 	defer client.Close()
 

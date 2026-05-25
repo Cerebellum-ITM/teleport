@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +17,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// ErrNoAuthMethods is returned by Connect when no SSH agent is running and no
+// key files are found. Callers may catch it to prompt for a password.
+var ErrNoAuthMethods = errors.New("no SSH auth methods available")
 
 type Host struct {
 	Name         string
@@ -190,9 +195,41 @@ func buildAuthMethods(host Host) ([]ssh.AuthMethod, error) {
 	}
 
 	if len(signers) == 0 {
-		return nil, fmt.Errorf("no SSH auth methods available (no agent and no key files found)")
+		return nil, ErrNoAuthMethods
 	}
 	return []ssh.AuthMethod{ssh.PublicKeys(signers...)}, nil
+}
+
+// ConnectWithPassword connects to host using password authentication only.
+func ConnectWithPassword(host Host, password string) (*Client, error) {
+	home, _ := os.UserHomeDir()
+	knownHostsFile := filepath.Join(home, ".ssh", "known_hosts")
+	hostKeyCallback := ssh.InsecureIgnoreHostKey()
+	if _, err := os.Stat(knownHostsFile); err == nil {
+		if cb, err := knownhosts.New(knownHostsFile); err == nil {
+			hostKeyCallback = cb
+		}
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            host.User,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: hostKeyCallback,
+	}
+
+	addr := net.JoinHostPort(host.Hostname, host.Port)
+	sc, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+	}
+
+	sftpClient, err := sftp.NewClient(sc)
+	if err != nil {
+		sc.Close()
+		return nil, fmt.Errorf("sftp client: %w", err)
+	}
+
+	return &Client{ssh: sc, SFTP: sftpClient}, nil
 }
 
 // agentMethodForIdentity returns a PublicKeys auth method containing only the

@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
+	"charm.land/huh/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
@@ -135,12 +137,44 @@ func connectToProfile(profile config.Profile) (*sshpkg.Client, error) {
 			Port:     "22",
 		}
 	}
+	return connectToHost(*target)
+}
+
+// connectToHost connects to target, falling back to a password prompt when
+// no key-based auth method is available.
+func connectToHost(target sshpkg.Host) (*sshpkg.Client, error) {
 	log.Info("Connecting", "host", target.Name)
-	client, err := sshpkg.Connect(*target)
+	client, err := sshpkg.Connect(target)
+	if err == nil {
+		return client, nil
+	}
+	if !errors.Is(err, sshpkg.ErrNoAuthMethods) {
+		return nil, fmt.Errorf("connect to %s: %w", target.Name, err)
+	}
+	pw, err := promptPassword(target)
+	if err != nil {
+		return nil, err
+	}
+	client, err = sshpkg.ConnectWithPassword(target, pw)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", target.Name, err)
 	}
 	return client, nil
+}
+
+// promptPassword shows a masked password input for the given host.
+func promptPassword(host sshpkg.Host) (string, error) {
+	var pw string
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title(fmt.Sprintf("Password for %s@%s", host.User, host.Hostname)).
+			EchoMode(huh.EchoModePassword).
+			Value(&pw),
+	))
+	if err := form.Run(); err != nil {
+		return "", fmt.Errorf("password prompt: %w", err)
+	}
+	return pw, nil
 }
 
 // cleanRemote runs the safe-guard check, the porcelain status, the
