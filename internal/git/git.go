@@ -126,6 +126,25 @@ func FileAtCommit(sha, path string) ([]byte, error) {
 	return out, nil
 }
 
+// HasUncommittedChanges reports whether the working tree has any
+// staged or unstaged changes according to git status --porcelain.
+func HasUncommittedChanges() (bool, error) {
+	lines, err := runGit("status", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	return len(lines) > 0, nil
+}
+
+// LocalHEAD returns the full SHA of HEAD.
+func LocalHEAD() (string, error) {
+	lines, err := runGit("rev-parse", "HEAD")
+	if err != nil || len(lines) == 0 {
+		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+	return strings.TrimSpace(lines[0]), nil
+}
+
 func runGit(args ...string) ([]string, error) {
 	out, err := exec.Command("git", args...).Output()
 	if err != nil {
