@@ -380,6 +380,33 @@ func (c *Client) RunCommand(cmd string) (string, error) {
 	return stdout.String(), nil
 }
 
+// DownloadFile copies remotePath from the SFTP server to localPath,
+// creating local parent directories as needed. On partial write the
+// incomplete local file is removed.
+func (c *Client) DownloadFile(remotePath, localPath string) error {
+	src, err := c.SFTP.Open(remotePath)
+	if err != nil {
+		return fmt.Errorf("open remote %s: %w", remotePath, err)
+	}
+	defer src.Close()
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(localPath), err)
+	}
+
+	dst, err := os.Create(localPath)
+	if err != nil {
+		return fmt.Errorf("create local %s: %w", localPath, err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		os.Remove(localPath)
+		return fmt.Errorf("download %s: %w", remotePath, err)
+	}
+	return nil
+}
+
 // ShellQuote wraps s in single quotes safe for POSIX shells.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
