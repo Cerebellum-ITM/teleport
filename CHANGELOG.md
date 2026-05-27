@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-27
+
 ### Added
 - `teleport pull [profile]` — downloads files that were modified directly on the remote to the local working tree. Pre-checks: local working tree must be clean and both sides must be at the same commit (aborts with a hint if not). Uses `git status --porcelain=v1 -z` on the remote to identify changed/added/untracked/deleted files; downloads via SFTP, removes locally-deleted files, reports per-file `✓`/`-`/`✗` status and a summary line. Exit code 1 when any file fails. Implemented via `Client.DownloadFile` in `internal/ssh`, `git.HasUncommittedChanges` and `git.LocalHEAD` in `internal/git`, and `cmd/pull.go`.
 - `teleport profiles remove <name>` (alias `rm`) removes a profile from the global config. Exits with a clear error and hint when the profile does not exist. Emits a warning (but does not modify the local config) when the removed profile was the `default-profile` of the current directory. Implemented via `GlobalConfig.RemoveProfile` in `internal/config` and a new `profilesRemoveCmd` in `cmd/profiles.go`.
