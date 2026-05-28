@@ -103,7 +103,7 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 		}
 	}
 
-	fmt.Println()
+	fmt.Print("\n")
 	return errs, nil
 }
 

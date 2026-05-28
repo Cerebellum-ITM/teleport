@@ -105,22 +105,30 @@ func runShip(_ *cobra.Command, args []string) error {
 
 	start := time.Now()
 	tmpDir := fmt.Sprintf("/tmp/teleport-ship-%d-%d", os.Getpid(), time.Now().UnixNano())
-	tmpPath := tmpDir + "/" + remoteName
+	localBasename := filepath.Base(localPath)
+	tmpUploadPath := tmpDir + "/" + localBasename // upload keeps original filename
+	tmpFinalPath := tmpDir + "/" + remoteName      // after rename (same if no rename)
 	finalPath := binDir + "/" + remoteName
+	needsRename := remoteName != localBasename
 
 	moveCmd := fmt.Sprintf("mv -f %s %s",
-		sshpkg.ShellQuote(tmpPath), sshpkg.ShellQuote(finalPath))
+		sshpkg.ShellQuote(tmpFinalPath), sshpkg.ShellQuote(finalPath))
 	usedSudo := false
 
-	header := fmt.Sprintf("Shipping %s → %s:%s", filepath.Base(localPath), profile.Host, finalPath)
-	stepNames := []string{
-		fmt.Sprintf("uploading  %s", filepath.Base(localPath)),
-		"chmod +x",
-		fmt.Sprintf("moving  → %s:%s", profile.Host, finalPath),
+	header := fmt.Sprintf("Shipping %s → %s:%s", localBasename, profile.Host, finalPath)
+
+	stepNames := []string{fmt.Sprintf("uploading   %s", localBasename)}
+	if needsRename {
+		stepNames = append(stepNames, fmt.Sprintf("renaming    %s → %s", localBasename, remoteName))
 	}
+	stepNames = append(stepNames,
+		"chmod +x",
+		fmt.Sprintf("moving   → %s:%s", profile.Host, finalPath),
+	)
+
 	steps := []tui.ShipStepFunc{
 		func(setExtra func(string)) error {
-			return client.UploadFileProgress(localPath, tmpPath, func(written, total int64) {
+			return client.UploadFileProgress(localPath, tmpUploadPath, func(written, total int64) {
 				pct := 0
 				if total > 0 {
 					pct = int(written * 100 / total)
@@ -129,8 +137,18 @@ func runShip(_ *cobra.Command, args []string) error {
 					tui.HumanBytes(written), tui.HumanBytes(total), pct))
 			})
 		},
+	}
+	if needsRename {
+		renameCmd := fmt.Sprintf("mv %s %s",
+			sshpkg.ShellQuote(tmpUploadPath), sshpkg.ShellQuote(tmpFinalPath))
+		steps = append(steps, func(_ func(string)) error {
+			_, e := client.RunCommand(renameCmd)
+			return e
+		})
+	}
+	steps = append(steps,
 		func(_ func(string)) error {
-			_, e := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpPath))
+			_, e := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpFinalPath))
 			return e
 		},
 		func(_ func(string)) error {
@@ -143,9 +161,9 @@ func runShip(_ *cobra.Command, args []string) error {
 				return e
 			}
 			usedSudo = true
-			return moveWithSudo(client, host, moveCmd, profile.Host, tmpPath)
+			return moveWithSudo(client, host, moveCmd, profile.Host, tmpFinalPath)
 		},
-	}
+	)
 
 	errs, tuiErr := tui.RunShipProgress(header, stepNames, steps)
 	if tuiErr != nil {
@@ -164,13 +182,13 @@ func runShip(_ *cobra.Command, args []string) error {
 	if usedSudo {
 		sudoTag = shipDimStyle.Render(" (sudo)")
 	}
-	fmt.Printf("\n%s %s → %s%s\n",
-		shipOKStyle.Render(" shipped"),
+	fmt.Printf("  %s  %s → %s%s\n",
+		shipOKStyle.Render("shipped"),
 		shipBoldStyle.Render(remoteName),
 		shipBoldStyle.Render(profile.Host+":"+finalPath),
 		sudoTag,
 	)
-	fmt.Printf("   %s  %s\n",
+	fmt.Printf("  %s  %s\n",
 		shipDimStyle.Render(string(targetOS)),
 		shipDimStyle.Render(elapsed.String()),
 	)
