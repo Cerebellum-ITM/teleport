@@ -14,6 +14,7 @@ import (
 	"github.com/pascualchavez/teleport/internal/bindetect"
 	"github.com/pascualchavez/teleport/internal/config"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,9 @@ var (
 	shipDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	shipBoldStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
 )
+
+// suppress unused import warning when log is only used in TouchLastSync path
+var _ = log.Info
 
 func init() {
 	shipCmd.Flags().StringVar(&shipOS, "os", "", "override target OS (linux|macos|windows)")
@@ -104,47 +108,49 @@ func runShip(_ *cobra.Command, args []string) error {
 	tmpPath := tmpDir + "/" + remoteName
 	finalPath := binDir + "/" + remoteName
 
-	// Step 1: upload.
-	printShipStep("uploading", localPath, profile.Host+":"+tmpPath)
-	if err := client.UploadFile(localPath, tmpPath); err != nil {
-		return fmt.Errorf("upload: %w", err)
-	}
-	printShipDone("uploaded")
-
-	// Step 2: chmod.
-	printShipStep("chmod +x", "", "")
-	if _, err := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpPath)); err != nil {
-		return fmt.Errorf("chmod: %w", err)
-	}
-	printShipDone("done")
-
-	// Step 3: move into bin dir (with optional sudo).
-	printShipStep("moving", "", profile.Host+":"+finalPath)
 	moveCmd := fmt.Sprintf("mv -f %s %s",
 		sshpkg.ShellQuote(tmpPath), sshpkg.ShellQuote(finalPath))
 	usedSudo := false
-	writable, err := client.RemoteWritable(binDir)
-	if err != nil {
-		return fmt.Errorf("probe %s: %w", binDir, err)
-	}
-	if writable {
-		if _, err := client.RunCommand(moveCmd); err != nil {
-			return fmt.Errorf("mv: %w", err)
-		}
-	} else {
-		usedSudo = true
-		if err := moveWithSudo(client, host, moveCmd, profile.Host, tmpPath); err != nil {
-			return err
-		}
-	}
-	printShipDone("done")
 
-	// Cleanup tmp dir.
+	header := fmt.Sprintf("Shipping %s → %s:%s", filepath.Base(localPath), profile.Host, finalPath)
+	stepNames := []string{
+		fmt.Sprintf("uploading  %s", filepath.Base(localPath)),
+		"chmod +x",
+		fmt.Sprintf("moving  → %s:%s", profile.Host, finalPath),
+	}
+	steps := []tui.ShipStepFunc{
+		func() error { return client.UploadFile(localPath, tmpPath) },
+		func() error {
+			_, e := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpPath))
+			return e
+		},
+		func() error {
+			writable, e := client.RemoteWritable(binDir)
+			if e != nil {
+				return fmt.Errorf("probe %s: %w", binDir, e)
+			}
+			if writable {
+				_, e = client.RunCommand(moveCmd)
+				return e
+			}
+			usedSudo = true
+			return moveWithSudo(client, host, moveCmd, profile.Host, tmpPath)
+		},
+	}
+
+	errs, tuiErr := tui.RunShipProgress(header, stepNames, steps)
+	if tuiErr != nil {
+		return tuiErr
+	}
 	_, _ = client.RunCommand("rmdir " + sshpkg.ShellQuote(tmpDir))
 
-	elapsed := time.Since(start).Round(time.Millisecond)
+	for i, e := range errs {
+		if e != nil {
+			return fmt.Errorf("step %d (%s): %w", i+1, stepNames[i], e)
+		}
+	}
 
-	// Final summary line.
+	elapsed := time.Since(start).Round(time.Millisecond)
 	sudoTag := ""
 	if usedSudo {
 		sudoTag = shipDimStyle.Render(" (sudo)")

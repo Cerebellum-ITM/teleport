@@ -86,8 +86,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("save global config: %w", err)
 	}
 
-	if err := configureLocalBinDir(); err != nil {
-		return err
+	// Only ask for local bin_dir if at least one bin profile was configured
+	// without a BinFile (picker is needed as fallback).
+	needBinDir := false
+	for _, t := range targets {
+		osName, ok := binTargetOS(t)
+		if !ok {
+			continue
+		}
+		if p, exists := globalCfg.BinProfiles[osName]; !exists || p.BinFile == "" {
+			needBinDir = true
+			break
+		}
+	}
+	if needBinDir {
+		if err := configureLocalBinDir(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -242,20 +257,21 @@ func configureBinProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host, os
 		remoteName = strings.TrimSpace(remoteName)
 	}
 
-	// Optional: local binary file for this OS profile.
+	// Optional: local binary file for this OS profile — pick via TUI.
 	binFile := autodetectBinFile(osName)
 	{
-		form := huh.NewForm(huh.NewGroup(
-			huh.NewInput().
-				Title(fmt.Sprintf("Local binary for %s (optional)", osName)).
-				Description("Path to the local binary (e.g. ./bin/mycli_linux_amd64). Leave empty to pick on each run.").
-				Placeholder(binFile).
-				Value(&binFile),
-		))
-		if err := form.Run(); err != nil {
-			return fmt.Errorf("form: %w", err)
+		startDir := "./bin"
+		if info, err := os.Stat("bin"); err != nil || !info.IsDir() {
+			startDir = "."
 		}
-		binFile = strings.TrimSpace(binFile)
+		picked, err := tui.RunLocalFilePicker(startDir,
+			fmt.Sprintf("  Select local binary for %s (esc/q to skip)", osName))
+		if err == nil {
+			binFile = picked
+		} else if binFile != "" {
+			// autodetect fallback — keep it
+		}
+		// err means user quit/skipped — binFile stays empty or autodetected
 	}
 
 	globalCfg.SetBinProfile(osName, config.BinProfile{
