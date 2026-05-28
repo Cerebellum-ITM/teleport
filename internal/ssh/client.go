@@ -138,7 +138,7 @@ func Connect(host Host) (*Client, error) {
 	}
 
 	sftpClient, err := sftp.NewClient(sc,
-		sftp.MaxPacketChecked(1<<22), // 4 MiB packets instead of the 32 KiB default
+		sftp.MaxPacketUnchecked(1<<22), // 4 MiB writes; SSH layer handles channel fragmentation
 		sftp.UseConcurrentWrites(true),
 	)
 	if err != nil {
@@ -339,25 +339,28 @@ func (c *Client) UploadFileProgress(localPath, remotePath string, progress func(
 	}
 	defer dst.Close()
 
-	pw := &progressWriter{w: dst, total: total, fn: progress}
-	if _, err := io.Copy(pw, src); err != nil {
+	pr := &progressReader{r: src, total: total, fn: progress}
+	if _, err := dst.ReadFrom(pr); err != nil {
 		return fmt.Errorf("upload %s: %w", localPath, err)
 	}
 	return nil
 }
 
-type progressWriter struct {
-	w       io.Writer
-	total   int64
-	written int64
-	fn      func(written, total int64)
+// progressReader wraps a reader and calls fn after each Read so callers can
+// track upload progress. Using ReadFrom on sftp.File reads in MaxPacket-sized
+// chunks, which is the fast concurrent-write path.
+type progressReader struct {
+	r     io.Reader
+	total int64
+	read  int64
+	fn    func(written, total int64)
 }
 
-func (p *progressWriter) Write(b []byte) (int, error) {
-	n, err := p.w.Write(b)
-	p.written += int64(n)
-	if p.fn != nil {
-		p.fn(p.written, p.total)
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.read += int64(n)
+	if p.fn != nil && n > 0 {
+		p.fn(p.read, p.total)
 	}
 	return n, err
 }

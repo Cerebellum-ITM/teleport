@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,16 +22,22 @@ var slSpinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 // text appended to the active spinner line (e.g. upload byte progress).
 type ShipStepFunc func(setExtra func(string)) error
 
-// RunShipProgress executes each step sequentially, printing log-style spinner
-// lines — yellow while active, green on success, red on error.
-// The second return value is always nil (kept for API compatibility).
+// RunShipProgress prints all steps upfront, then animates each one in place
+// using ANSI cursor movement — yellow spinner while active, green ✓ on success.
 func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([]error, error) {
 	errs := make([]error, len(steps))
+	n := len(steps)
 
 	fmt.Printf("\n  %s\n\n", spHeaderStyle.Render(header))
 
+	// Print all steps as pending so the full list is visible from the start.
+	for _, name := range stepNames {
+		fmt.Printf("  %s  %s\n", slSkipStyle.Render("·"), slSkipStyle.Render(name))
+	}
+
 	for i, fn := range steps {
 		name := stepNames[i]
+		linesUp := n - i // distance from current cursor position to step i's line
 
 		var mu sync.Mutex
 		extra := ""
@@ -59,10 +64,13 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 					ex := extra
 					mu.Unlock()
 					spin := slSpinFrames[frame%len(slSpinFrames)]
-					fmt.Printf("\r  %s  %-22s%s",
+					// Move up to step line, erase it, print spinner, move back down.
+					fmt.Printf("\033[%dA\033[2K\r  %s  %s%s\033[%dB\r",
+						linesUp,
 						slActiveStyle.Render(spin),
 						slActiveStyle.Render(name),
-						slActiveStyle.Render(ex))
+						slActiveStyle.Render(ex),
+						linesUp)
 					frame++
 				}
 			}
@@ -74,28 +82,28 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 		wg.Wait()
 
 		elapsed := time.Since(stepStart).Round(time.Millisecond)
-		fmt.Printf("\r%s\r", strings.Repeat(" ", 100))
+
+		// Erase spinner line and print final status, then return cursor to bottom.
+		icon := slDoneStyle.Render("✓")
+		nameStyle := slDoneStyle
+		if err != nil {
+			icon = slErrStyle.Render("✗")
+			nameStyle = slErrStyle
+			errs[i] = err
+		}
+		fmt.Printf("\033[%dA\033[2K\r  %s  %s  %s\033[%dB\r",
+			linesUp,
+			icon,
+			nameStyle.Render(name),
+			slElapsedStyle.Render(elapsed.String()),
+			linesUp)
 
 		if err != nil {
-			fmt.Printf("  %s  %-22s%s\n",
-				slErrStyle.Render("✗"),
-				slErrStyle.Render(name),
-				slElapsedStyle.Render(elapsed.String()))
-			errs[i] = err
-			for j := i + 1; j < len(steps); j++ {
-				fmt.Printf("  %s  %s\n",
-					slSkipStyle.Render("·"),
-					slSkipStyle.Render(stepNames[j]))
-			}
 			return errs, nil
 		}
-
-		fmt.Printf("  %s  %-22s%s\n",
-			slDoneStyle.Render("✓"),
-			slDoneStyle.Render(name),
-			slElapsedStyle.Render(elapsed.String()))
 	}
 
+	fmt.Println()
 	return errs, nil
 }
 
