@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -14,6 +13,7 @@ import (
 )
 
 var (
+	beamBranch   string
 	beamThenSync bool
 	beamClean    bool
 	beamYes      bool
@@ -27,6 +27,7 @@ var beamCmd = &cobra.Command{
 }
 
 func init() {
+	beamCmd.Flags().StringVarP(&beamBranch, "branch", "b", "", "source branch for commits (default: current branch)")
 	beamCmd.Flags().BoolVarP(&beamThenSync, "then-sync", "s", false, "run sync after beam (working-tree changes over the just-beamed snapshot)")
 	beamCmd.Flags().BoolVarP(&beamClean, "clean", "c", false, "run clean before beam (discard dirty changes on the remote)")
 	beamCmd.Flags().BoolVarP(&beamYes, "yes", "y", false, "skip the clean confirmation prompt")
@@ -66,19 +67,21 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	commits, err := git.CommitsAhead()
+	branch, err := resolveBranch(beamBranch)
 	if err != nil {
-		if errors.Is(err, git.ErrNoUpstream) {
-			if beamClean {
-				return nil // clean already ran; nothing else to do
-			}
-			return fmt.Errorf("beam requires an upstream branch (try `git push -u origin <branch>`)")
-		}
+		return err
+	}
+	if branch == "" {
+		return nil
+	}
+
+	commits, err := git.CommitsAheadOf(branch)
+	if err != nil {
 		return err
 	}
 	if len(commits) == 0 {
 		if !beamClean {
-			fmt.Println("Nothing to beam — no local commits ahead of upstream.")
+			fmt.Printf("Nothing to beam — no local commits on %s ahead of remote.\n", branch)
 		}
 		return nil
 	}
@@ -217,4 +220,23 @@ func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntrac
 		return fmt.Errorf("%d file(s) failed to upload in sync stage", failed)
 	}
 	return nil
+}
+
+func resolveBranch(explicit string) (string, error) {
+	current, all, err := git.LocalBranches()
+	if err != nil {
+		return "", fmt.Errorf("list branches: %w", err)
+	}
+	if explicit != "" {
+		for _, b := range all {
+			if b == explicit {
+				return b, nil
+			}
+		}
+		return "", fmt.Errorf("branch %q not found locally", explicit)
+	}
+	if len(all) == 1 {
+		return current, nil
+	}
+	return tui.RunBranchPicker(all, current)
 }

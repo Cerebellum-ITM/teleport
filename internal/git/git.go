@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var ErrNoUpstream = errors.New("no upstream branch configured")
+var (
+	ErrNoUpstream = errors.New("no upstream branch configured")
+	ErrNoCommits  = errors.New("no commits ahead of remote")
+)
 
 type Commit struct {
 	SHA     string
@@ -35,17 +38,48 @@ func UntrackedFiles() ([]string, error) {
 	return runGit("ls-files", "--others", "--exclude-standard")
 }
 
-func CommitsAhead() ([]Commit, error) {
-	cmd := exec.Command("git", "log", "@{u}..HEAD", "--format=%H%x09%h%x09%s%x09%cr")
+func LocalBranches() (current string, all []string, err error) {
+	lines, err := runGit("branch", "--format=%(refname:short)")
+	if err != nil {
+		return "", nil, err
+	}
+
+	currLines, err := runGit("rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || len(currLines) == 0 {
+		return "", nil, fmt.Errorf("get current branch: %w", err)
+	}
+	current = strings.TrimSpace(currLines[0])
+
+	all = make([]string, 0, len(lines))
+	all = append(all, current)
+	for _, b := range lines {
+		if b != current {
+			all = append(all, b)
+		}
+	}
+	return current, all, nil
+}
+
+func CommitsAheadOf(branch string) ([]Commit, error) {
+	// Try to get the upstream for this branch.
+	upstreamCmd := exec.Command("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
+	upstreamOut, err := upstreamCmd.Output()
+	upstream := strings.TrimSpace(string(upstreamOut))
+	hasUpstream := err == nil && upstream != ""
+
+	var logArgs []string
+	if hasUpstream {
+		logArgs = []string{"log", upstream + ".." + branch, "--format=%H%x09%h%x09%s%x09%cr"}
+	} else {
+		logArgs = []string{"log", branch, "--not", "--remotes", "--format=%H%x09%h%x09%s%x09%cr"}
+	}
+
+	cmd := exec.Command("git", logArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := stderr.String()
-		if strings.Contains(msg, "no upstream") || strings.Contains(msg, "unknown revision") {
-			return nil, ErrNoUpstream
-		}
-		return nil, fmt.Errorf("git log @{u}..HEAD: %w (%s)", err, strings.TrimSpace(msg))
+		return nil, fmt.Errorf("git %s: %w (%s)", strings.Join(logArgs, " "), err, strings.TrimSpace(stderr.String()))
 	}
 
 	raw := strings.TrimSpace(stdout.String())
@@ -67,6 +101,14 @@ func CommitsAhead() ([]Commit, error) {
 		})
 	}
 	return commits, nil
+}
+
+func CommitsAhead() ([]Commit, error) {
+	_, branches, err := LocalBranches()
+	if err != nil || len(branches) == 0 {
+		return nil, err
+	}
+	return CommitsAheadOf(branches[0])
 }
 
 // FilesInCommits accepts shas in chronological order (oldest first) and

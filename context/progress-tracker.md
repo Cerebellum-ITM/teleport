@@ -31,6 +31,7 @@ Update this file after every meaningful implementation change.
 - **Unit 09 — SSH password auth**: `ErrNoAuthMethods` sentinel in `internal/ssh/client.go`; `ConnectWithPassword(host, pw)`; `connectToHost` in `cmd/clean.go` catches the sentinel and calls `promptPassword` (masked `huh` input); `connectToProfile` delegates to `connectToHost`; `init`, `sync`, `status` migrated to use the shared helpers — all commands now fall back to password prompt when no key/agent is available (`context/specs/09-ssh-password-auth.md`)
 - **Unit 10 — Remove profile**: `teleport profiles remove <name>` (alias `rm`) elimina un profile del global config; `GlobalConfig.RemoveProfile` helper en `internal/config/config.go`; warning si el profile eliminado era el `default-profile` del local config actual, sin modificar el local config (`context/specs/10-remove-profile.md`)
 - **Unit 12 — Pull**: `teleport pull [profile]` downloads files changed on the remote to local working tree; pre-checks ensure local working tree is clean and both remotes are at the same commit; uses `git status --porcelain=v1 -z` to detect modified/added/deleted/untracked files; deletes via `os.Remove`, downloads via SFTP with per-file ✓/-/✗ output; `git.HasUncommittedChanges()` + `git.LocalHEAD()` helpers; `ssh.Client.DownloadFile()` method (`context/specs/12-pull.md`)
+- **Unit 13 — Beam branch picker**: `teleport beam --branch/-b <branch>` flag to specify source branch; new branch picker TUI when flag omitted and multiple branches exist (current pre-selected); new `git.LocalBranches()` + `git.CommitsAheadOf(branch)` helpers with upstream/remote-only logic; new `internal/tui/branchpicker.go` bubbletea model (`context/specs/13-beam-branch-picker.md`)
 
 ## In Progress
 
@@ -39,6 +40,10 @@ Update this file after every meaningful implementation change.
 ## Next Up
 
 - (sin unidad planificada)
+
+## Unit 13 Summary
+
+- **Unit 13 — Beam branch picker**: `teleport beam` now accepts `--branch/-b` flag to specify the source branch for commits. If not provided and multiple branches exist, a new TUI branch picker opens (pre-selecting current branch). If only one branch exists, the picker is skipped. New `git.LocalBranches()` helper returns current branch first, followed by others; new `git.CommitsAheadOf(branch)` uses explicit upstream check or `--not --remotes` fallback. New `internal/tui/branchpicker.go` implements single-select bubbletea model with keys `↑/k`, `↓/j`, `enter`, `ctrl+c`. `cmd/beam.go` adds `resolveBranch` helper and refactored commit sourcing. Message now shows `"Nothing to beam — no local commits on <branch> ahead of remote."` when sync'd. No new dependencies.
 
 ## Open Questions
 

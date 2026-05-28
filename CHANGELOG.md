@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `teleport beam --branch/-b <branch>` flag to specify which local branch to source commits from instead of always using the current branch's upstream. If omitted and multiple local branches exist, a new TUI branch picker opens (with the current branch pre-selected); passing the flag skips the TUI. Single-branch repos skip the picker automatically. Implemented via `git.LocalBranches()` helper (returns current branch first), `git.CommitsAheadOf(branch)` with upstream check or `--not --remotes` fallback, and `internal/tui.RunBranchPicker()` bubbletea single-select model.
+
 ## [0.1.3] - 2026-05-27
 
 ### Added
