@@ -36,6 +36,7 @@ func listDirsCmd(client *sshpkg.Client, path string) tea.Cmd {
 type DirPicker struct {
 	client   *sshpkg.Client
 	cwd      string
+	header   string
 	dirs     []string
 	filter   textinput.Model
 	cursor   int
@@ -53,6 +54,10 @@ var (
 )
 
 func NewDirPicker(client *sshpkg.Client, startPath string) DirPicker {
+	return NewDirPickerWith(client, startPath, "  Remote Directory Browser")
+}
+
+func NewDirPickerWith(client *sshpkg.Client, startPath, header string) DirPicker {
 	fi := textinput.New()
 	fi.Placeholder = "filter..."
 	fi.Focus()
@@ -60,6 +65,7 @@ func NewDirPicker(client *sshpkg.Client, startPath string) DirPicker {
 	return DirPicker{
 		client:  client,
 		cwd:     startPath,
+		header:  header,
 		loading: true,
 		filter:  fi,
 	}
@@ -186,7 +192,7 @@ func (m DirPicker) View() tea.View {
 
 	var b strings.Builder
 
-	b.WriteString(headerStyle.Render("  Remote Directory Browser") + "\n")
+	b.WriteString(headerStyle.Render(m.header) + "\n")
 	b.WriteString(dimStyle.Render("  "+m.cwd) + "\n")
 	b.WriteString("  " + m.filter.View() + "\n\n")
 
@@ -226,7 +232,11 @@ func (m DirPicker) View() tea.View {
 }
 
 func RunDirPicker(client *sshpkg.Client, startPath string) (string, error) {
-	p := tea.NewProgram(NewDirPicker(client, startPath))
+	return RunDirPickerWith(client, startPath, "  Remote Directory Browser")
+}
+
+func RunDirPickerWith(client *sshpkg.Client, startPath, header string) (string, error) {
+	p := tea.NewProgram(NewDirPickerWith(client, startPath, header))
 	m, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("dir picker: %w", err)

@@ -165,6 +165,7 @@ func printHelp() {
 			{iconGear, "status", "compare local files against the remote (SHA256)"},
 			{iconSync, "clean", "discard dirty changes on the remote (git checkout + git clean)"},
 			{iconSync, "pull", "download remote changes to local working tree"},
+			{iconSync, "ship", "deploy a local binary to its OS-matching bin profile"},
 			{iconPerson, "profiles", "list configured sync profiles"},
 			{iconGear, "config", "get/set per-directory defaults (e.g. sync-untracked)"},
 			{iconTag, "version", "print version information"},
@@ -187,6 +188,7 @@ func printHelp() {
 			{"teleport clean", "discard dirty changes on the remote"},
 			{"teleport status -p", "verify pending work matches the remote"},
 			{"teleport config set sync-untracked true", "remember -u for this wd"},
+			{"teleport ship ./mycli", "deploy a built binary to its OS bin/ dir"},
 		},
 	}
 

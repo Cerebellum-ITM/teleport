@@ -21,7 +21,7 @@ func runProfiles(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if len(cfg.Profiles) == 0 {
+	if len(cfg.Profiles) == 0 && len(cfg.BinProfiles) == 0 {
 		fmt.Println("No profiles configured. Run `teleport init` to create one.")
 		return nil
 	}
@@ -32,20 +32,39 @@ func runProfiles(_ *cobra.Command, _ []string) error {
 		defaultProfile = localCfg.DefaultProfile
 	}
 
-	names := make([]string, 0, len(cfg.Profiles))
-	for n := range cfg.Profiles {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-
-	fmt.Println("Configured profiles:")
-	for _, name := range names {
-		p := cfg.Profiles[name]
-		marker := "  "
-		if name == defaultProfile {
-			marker = "* "
+	if len(cfg.Profiles) > 0 {
+		names := make([]string, 0, len(cfg.Profiles))
+		for n := range cfg.Profiles {
+			names = append(names, n)
 		}
-		fmt.Printf("%s%-20s  %s:%s\n", marker, name, p.Host, p.Path)
+		sort.Strings(names)
+
+		fmt.Println("Sync profiles:")
+		for _, name := range names {
+			p := cfg.Profiles[name]
+			marker := "  "
+			if name == defaultProfile {
+				marker = "* "
+			}
+			fmt.Printf("%s%-20s  %s:%s\n", marker, name, p.Host, p.Path)
+		}
+	}
+
+	if len(cfg.BinProfiles) > 0 {
+		if len(cfg.Profiles) > 0 {
+			fmt.Println()
+		}
+		osNames := make([]string, 0, len(cfg.BinProfiles))
+		for o := range cfg.BinProfiles {
+			osNames = append(osNames, o)
+		}
+		sort.Strings(osNames)
+
+		fmt.Println("Bin profiles:")
+		for _, o := range osNames {
+			p := cfg.BinProfiles[o]
+			fmt.Printf("  %-20s  %s:%s\n", o, p.Host, p.BinPath)
+		}
 	}
 
 	return nil

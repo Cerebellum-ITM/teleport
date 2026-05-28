@@ -278,7 +278,7 @@ func (c *Client) ListDirs(path string) ([]string, error) {
 
 	var dirs []string
 	for _, e := range entries {
-		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+		if e.IsDir() {
 			dirs = append(dirs, e.Name())
 		}
 	}
@@ -405,6 +405,40 @@ func (c *Client) DownloadFile(remotePath, localPath string) error {
 		return fmt.Errorf("download %s: %w", remotePath, err)
 	}
 	return nil
+}
+
+// RunCommandStdin executes cmd on the remote host with stdin piped in and
+// returns stdout. Used for `sudo -S` to feed a password without exposing it
+// on the command line.
+func (c *Client) RunCommandStdin(cmd, stdin string) (string, error) {
+	sess, err := c.ssh.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("ssh session: %w", err)
+	}
+	defer sess.Close()
+
+	var stdout, stderr strings.Builder
+	sess.Stdout = &stdout
+	sess.Stderr = &stderr
+	sess.Stdin = strings.NewReader(stdin)
+
+	if err := sess.Run(cmd); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return stdout.String(), fmt.Errorf("%s: %w", msg, err)
+		}
+		return stdout.String(), err
+	}
+	return stdout.String(), nil
+}
+
+// RemoteWritable reports whether the SSH user can write to dir on the remote.
+func (c *Client) RemoteWritable(dir string) (bool, error) {
+	out, err := c.RunCommand("[ -w " + ShellQuote(dir) + " ] && echo y || echo n")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "y", nil
 }
 
 // ShellQuote wraps s in single quotes safe for POSIX shells.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/pascualchavez/teleport/internal/bindetect"
 )
 
 const (
@@ -20,14 +21,23 @@ type Profile struct {
 	Path string `toml:"path"`
 }
 
+// BinProfile describes the destination for `teleport ship` for a given
+// target OS — the SSH host and the absolute path of the remote bin dir.
+type BinProfile struct {
+	Host    string `toml:"host"`
+	BinPath string `toml:"bin_path"`
+}
+
 type GlobalConfig struct {
-	Profiles map[string]Profile `toml:"profiles"`
+	Profiles    map[string]Profile    `toml:"profiles"`
+	BinProfiles map[string]BinProfile `toml:"bin_profiles,omitempty"`
 }
 
 type LocalConfig struct {
 	DefaultProfile string    `toml:"default_profile"`
 	SyncUntracked  bool      `toml:"sync_untracked,omitempty"`
 	LastSync       time.Time `toml:"last_sync,omitempty"`
+	BinDir         string    `toml:"bin_dir,omitempty"`
 }
 
 func GlobalConfigPath() (string, error) {
@@ -67,6 +77,11 @@ func LoadGlobal() (*GlobalConfig, error) {
 
 	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, fmt.Errorf("decode global config: %w", err)
+	}
+	for k := range cfg.BinProfiles {
+		if !bindetect.Valid(k) {
+			return nil, fmt.Errorf("unknown bin profile OS %q (expected linux|macos|windows)", k)
+		}
 	}
 	return cfg, nil
 }
@@ -146,4 +161,15 @@ func (g *GlobalConfig) SetProfile(name string, p Profile) {
 
 func (g *GlobalConfig) RemoveProfile(name string) {
 	delete(g.Profiles, name)
+}
+
+func (g *GlobalConfig) SetBinProfile(os string, p BinProfile) {
+	if g.BinProfiles == nil {
+		g.BinProfiles = make(map[string]BinProfile)
+	}
+	g.BinProfiles[os] = p
+}
+
+func (g *GlobalConfig) RemoveBinProfile(os string) {
+	delete(g.BinProfiles, os)
 }

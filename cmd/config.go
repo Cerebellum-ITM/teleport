@@ -62,6 +62,7 @@ func configKeysTable() []keyEntry {
 	return []keyEntry{
 		{iconKey, "default-profile", "string", "<unset>", "profile used when no name is passed to sync/beam/clean"},
 		{iconKey, "sync-untracked", "bool", "false", "include untracked files on every sync (same as -u)"},
+		{iconKey, "bin-dir", "string", "<unset>", "local dir where built binaries live (used by teleport ship)"},
 	}
 }
 
@@ -183,6 +184,11 @@ func printConfigOverview(local *config.LocalConfig) error {
 		fmt.Fprintf(&b, "  default-profile  = %s\n", defaultProfileDisplay)
 	}
 	fmt.Fprintf(&b, "  sync-untracked   = %t\n", local.SyncUntracked)
+	if local.BinDir != "" {
+		fmt.Fprintf(&b, "  bin-dir          = %s\n", local.BinDir)
+	} else {
+		fmt.Fprintf(&b, "  bin-dir          = %s\n", descStyle.Render("<unset>"))
+	}
 
 	if defaultProfileDisplay != "" {
 		profile, ok := globalCfg.Profiles[defaultProfileDisplay]
@@ -272,6 +278,8 @@ func runConfigUnset(_ *cobra.Command, args []string) error {
 		cfg.SyncUntracked = false
 	case "default-profile":
 		cfg.DefaultProfile = ""
+	case "bin-dir":
+		cfg.BinDir = ""
 	default:
 		return unknownConfigKey(args[0])
 	}
@@ -290,6 +298,8 @@ func readConfigKey(cfg *config.LocalConfig, key string) (string, error) {
 		return strconv.FormatBool(cfg.SyncUntracked), nil
 	case "default-profile":
 		return cfg.DefaultProfile, nil
+	case "bin-dir":
+		return cfg.BinDir, nil
 	default:
 		return "", unknownConfigKey(key)
 	}
@@ -308,6 +318,8 @@ func applyConfigKey(cfg *config.LocalConfig, key, value string) error {
 			return fmt.Errorf("default-profile cannot be empty; use `teleport config unset default-profile` to clear")
 		}
 		cfg.DefaultProfile = value
+	case "bin-dir":
+		cfg.BinDir = value
 	default:
 		return unknownConfigKey(key)
 	}
@@ -315,5 +327,5 @@ func applyConfigKey(cfg *config.LocalConfig, key, value string) error {
 }
 
 func unknownConfigKey(key string) error {
-	return fmt.Errorf("unknown config key %q (valid: sync-untracked, default-profile)", key)
+	return fmt.Errorf("unknown config key %q (valid: default-profile, sync-untracked, bin-dir)", key)
 }

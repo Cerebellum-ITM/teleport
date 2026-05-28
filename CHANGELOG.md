@@ -15,6 +15,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `teleport ship [bin]` — deploys a locally built CLI binary to a remote `bin/` directory in three automated steps: SFTP upload to a `/tmp` staging path → `chmod +x` → `mv` into the target dir (with automatic `sudo` escalation when the SSH user cannot write the destination). Target OS is auto-detected from magic bytes (ELF→linux, Mach-O incl. fat binary→macos, MZ/PE→windows); `--os` overrides detection. `--to` overrides the configured `bin_path` for the current run only. `--name` renames the binary on the remote. When `sudo` is needed, `sudo -n` is tried first; if a password is required a masked `huh` prompt appears, and on cancellation the binary is left under the staging path with a message pointing there. New `internal/bindetect` package handles magic-byte sniffing.
+- `bin-dir` local config key (`teleport config set bin-dir ./bin`) — stores the project-local directory where built binaries live. `teleport ship` without an argument reads this key: auto-selects the only file if there is one, or opens a `huh.Select` picker when multiple files are present. Configured interactively in `teleport init`.
+- `teleport init` now opens a multi-select at the start so the user can configure any combination of: sync profile, bin profile for Linux, bin profile for macOS, bin profile for Windows. Sync and bin flows are independent and can both be configured in a single session. A final step asks for the local `bin-dir` (autodetects `./bin` if it exists). Bin profiles are stored in `[bin_profiles.<os>]` in the global config; `teleport config set bin-dir` persists the source dir in the local project config.
+- `teleport profiles` now prints two labeled sections — `Sync profiles` and `Bin profiles` — omitting either when empty.
+- Remote directory browser now shows hidden directories (e.g. `.local`, `.config`) alongside visible ones, enabling navigation to paths like `~/.local/bin`.
+
+### Improved
+- `teleport init` remote directory picker accepts a custom header per invocation (`RunDirPickerWith`), so sync and bin flows show contextual titles instead of a generic "Remote Directory Browser".
+
 ## [0.1.4] - 2026-05-28
 
 ### Added
