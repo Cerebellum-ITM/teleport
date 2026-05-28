@@ -119,12 +119,21 @@ func runShip(_ *cobra.Command, args []string) error {
 		fmt.Sprintf("moving  → %s:%s", profile.Host, finalPath),
 	}
 	steps := []tui.ShipStepFunc{
-		func() error { return client.UploadFile(localPath, tmpPath) },
-		func() error {
+		func(setExtra func(string)) error {
+			return client.UploadFileProgress(localPath, tmpPath, func(written, total int64) {
+				pct := 0
+				if total > 0 {
+					pct = int(written * 100 / total)
+				}
+				setExtra(fmt.Sprintf("  %s / %s  %d%%",
+					tui.HumanBytes(written), tui.HumanBytes(total), pct))
+			})
+		},
+		func(_ func(string)) error {
 			_, e := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpPath))
 			return e
 		},
-		func() error {
+		func(_ func(string)) error {
 			writable, e := client.RemoteWritable(binDir)
 			if e != nil {
 				return fmt.Errorf("probe %s: %w", binDir, e)
@@ -170,23 +179,6 @@ func runShip(_ *cobra.Command, args []string) error {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
 	return nil
-}
-
-func printShipStep(verb, from, to string) {
-	var msg string
-	switch {
-	case from != "" && to != "":
-		msg = fmt.Sprintf("  %s  %s → %s", verb, from, to)
-	case to != "":
-		msg = fmt.Sprintf("  %s  %s", verb, to)
-	default:
-		msg = fmt.Sprintf("  %s", verb)
-	}
-	fmt.Printf("%s ", shipDimStyle.Render(msg))
-}
-
-func printShipDone(label string) {
-	fmt.Printf("%s\n", shipOKStyle.Render("✓ "+label))
 }
 
 // resolveShipContext returns the local binary path and, when a profile

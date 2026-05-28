@@ -137,7 +137,10 @@ func Connect(host Host) (*Client, error) {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
 
-	sftpClient, err := sftp.NewClient(sc)
+	sftpClient, err := sftp.NewClient(sc,
+		sftp.MaxPacketChecked(1<<20), // 1 MiB packets instead of the 32 KiB default
+		sftp.UseConcurrentWrites(true),
+	)
 	if err != nil {
 		sc.Close()
 		return nil, fmt.Errorf("sftp client: %w", err)
@@ -223,7 +226,10 @@ func ConnectWithPassword(host Host, password string) (*Client, error) {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
 
-	sftpClient, err := sftp.NewClient(sc)
+	sftpClient, err := sftp.NewClient(sc,
+		sftp.MaxPacketChecked(1<<20),
+		sftp.UseConcurrentWrites(true),
+	)
 	if err != nil {
 		sc.Close()
 		return nil, fmt.Errorf("sftp client: %w", err)
@@ -306,6 +312,54 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 		return fmt.Errorf("upload %s: %w", localPath, err)
 	}
 	return nil
+}
+
+// UploadFileProgress is like UploadFile but calls progress(written, total)
+// after each chunk so callers can display transfer progress.
+func (c *Client) UploadFileProgress(localPath, remotePath string, progress func(written, total int64)) error {
+	src, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("open local %s: %w", localPath, err)
+	}
+	defer src.Close()
+
+	stat, err := src.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", localPath, err)
+	}
+	total := stat.Size()
+
+	if err := c.SFTP.MkdirAll(filepath.Dir(remotePath)); err != nil {
+		return fmt.Errorf("mkdir remote %s: %w", filepath.Dir(remotePath), err)
+	}
+
+	dst, err := c.SFTP.Create(remotePath)
+	if err != nil {
+		return fmt.Errorf("create remote %s: %w", remotePath, err)
+	}
+	defer dst.Close()
+
+	pw := &progressWriter{w: dst, total: total, fn: progress}
+	if _, err := io.Copy(pw, src); err != nil {
+		return fmt.Errorf("upload %s: %w", localPath, err)
+	}
+	return nil
+}
+
+type progressWriter struct {
+	w       io.Writer
+	total   int64
+	written int64
+	fn      func(written, total int64)
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.w.Write(b)
+	p.written += int64(n)
+	if p.fn != nil {
+		p.fn(p.written, p.total)
+	}
+	return n, err
 }
 
 // UploadBytes writes content to remotePath, creating parent directories.
