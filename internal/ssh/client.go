@@ -138,7 +138,7 @@ func Connect(host Host) (*Client, error) {
 	}
 
 	sftpClient, err := sftp.NewClient(sc,
-		sftp.MaxPacketChecked(1<<20), // 1 MiB packets instead of the 32 KiB default
+		sftp.MaxPacketChecked(1<<22), // 4 MiB packets instead of the 32 KiB default
 		sftp.UseConcurrentWrites(true),
 	)
 	if err != nil {
