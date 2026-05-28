@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/huh/v2"
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/bindetect"
@@ -34,6 +35,18 @@ func init() {
 	initCmd.Flags().StringVarP(&initProfileFlag, "profile", "p", "", "sync profile name (default: current dir name)")
 }
 
+// multiSelectKeyMap returns a huh KeyMap where Tab is removed from the
+// MultiSelect Next binding so Tab never accidentally submits the form.
+// Space (and x) remain the toggle keys.
+func multiSelectKeyMap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.MultiSelect.Next = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "confirm"),
+	)
+	return km
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	targets, err := pickInitTargets()
 	if err != nil {
@@ -53,9 +66,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse ssh config: %w", err)
 	}
 
-	doSync := contains(targets, initTargetSync)
-
-	if doSync {
+	if contains(targets, initTargetSync) {
 		if err := configureSyncProfile(globalCfg, hosts); err != nil {
 			return err
 		}
@@ -82,48 +93,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// configureLocalBinDir asks the user for the local bin directory
-// (where built binaries live). Autodetects ./bin as the default suggestion.
-func configureLocalBinDir() error {
-	suggestion := ""
-	if info, err := os.Stat("bin"); err == nil && info.IsDir() {
-		suggestion = "./bin"
-	}
-
-	binDir := suggestion
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewInput().
-			Title("Local bin directory").
-			Description("Where your built binaries live (leave empty to skip)").
-			Placeholder("./bin").
-			Value(&binDir),
-	))
-	if err := form.Run(); err != nil {
-		return fmt.Errorf("form: %w", err)
-	}
-	binDir = strings.TrimSpace(binDir)
-
-	localCfg, err := config.LoadLocal()
-	if err != nil {
-		return fmt.Errorf("load local config: %w", err)
-	}
-	localCfg.BinDir = binDir
-	if err := config.SaveLocal(localCfg); err != nil {
-		return fmt.Errorf("save local config: %w", err)
-	}
-
-	if binDir != "" {
-		fmt.Printf("\nLocal bin directory set to: %s\n", binDir)
-	}
-	return nil
-}
-
 func pickInitTargets() ([]string, error) {
 	var picks []string
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewMultiSelect[string]().
 			Title("What do you want to configure?").
-			Description("Use space to toggle, enter to confirm").
+			Description("space = toggle  ·  enter = confirm").
 			Options(
 				huh.NewOption("Sync profile (teleport sync / beam / pull / status / clean)", initTargetSync),
 				huh.NewOption("Bin profile — Linux  (teleport ship)", initTargetBinLinux),
@@ -137,7 +112,7 @@ func pickInitTargets() ([]string, error) {
 				}
 				return nil
 			}),
-	))
+	)).WithKeyMap(multiSelectKeyMap())
 	if err := form.Run(); err != nil {
 		return nil, fmt.Errorf("form: %w", err)
 	}
@@ -252,13 +227,107 @@ func configureBinProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host, os
 		return err
 	}
 
+	// Optional: fixed remote filename for this OS profile.
+	remoteName := ""
+	{
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewInput().
+				Title(fmt.Sprintf("Remote name for %s (optional)", osName)).
+				Description("Filename the binary will have on the remote (e.g. mycli). Leave empty to use the local filename.").
+				Value(&remoteName),
+		))
+		if err := form.Run(); err != nil {
+			return fmt.Errorf("form: %w", err)
+		}
+		remoteName = strings.TrimSpace(remoteName)
+	}
+
+	// Optional: local binary file for this OS profile.
+	binFile := autodetectBinFile(osName)
+	{
+		form := huh.NewForm(huh.NewGroup(
+			huh.NewInput().
+				Title(fmt.Sprintf("Local binary for %s (optional)", osName)).
+				Description("Path to the local binary (e.g. ./bin/mycli_linux_amd64). Leave empty to pick on each run.").
+				Placeholder(binFile).
+				Value(&binFile),
+		))
+		if err := form.Run(); err != nil {
+			return fmt.Errorf("form: %w", err)
+		}
+		binFile = strings.TrimSpace(binFile)
+	}
+
 	globalCfg.SetBinProfile(osName, config.BinProfile{
-		Host:    host.Name,
-		BinPath: binPath,
+		Host:       host.Name,
+		BinPath:    binPath,
+		RemoteName: remoteName,
+		BinFile:    binFile,
 	})
 
 	log.Info("Bin profile saved", "os", osName, "host", host.Name, "bin_path", binPath)
-	fmt.Printf("\nBin profile %q configured:\n  host:     %s\n  bin_path: %s\n",
+	msg := fmt.Sprintf("\nBin profile %q configured:\n  host:     %s\n  bin_path: %s\n",
 		osName, host.Name, binPath)
+	if remoteName != "" {
+		msg += fmt.Sprintf("  remote_name: %s\n", remoteName)
+	}
+	if binFile != "" {
+		msg += fmt.Sprintf("  bin_file: %s\n", binFile)
+	}
+	fmt.Print(msg)
+	return nil
+}
+
+// autodetectBinFile scans ./bin for a file whose name contains the OS name
+// and returns the path, or "" if nothing matches.
+func autodetectBinFile(osName string) string {
+	info, err := os.Stat("bin")
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	entries, err := os.ReadDir("bin")
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.Contains(strings.ToLower(e.Name()), osName) {
+			return filepath.Join("./bin", e.Name())
+		}
+	}
+	return ""
+}
+
+// configureLocalBinDir asks the user for the local bin directory.
+func configureLocalBinDir() error {
+	suggestion := ""
+	if info, err := os.Stat("bin"); err == nil && info.IsDir() {
+		suggestion = "./bin"
+	}
+
+	binDir := suggestion
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Local bin directory").
+			Description("Where your built binaries live (leave empty to skip)").
+			Placeholder("./bin").
+			Value(&binDir),
+	))
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("form: %w", err)
+	}
+	binDir = strings.TrimSpace(binDir)
+
+	localCfg, err := config.LoadLocal()
+	if err != nil {
+		return fmt.Errorf("load local config: %w", err)
+	}
+	localCfg.BinDir = binDir
+	if err := config.SaveLocal(localCfg); err != nil {
+		return fmt.Errorf("save local config: %w", err)
+	}
+
+	if binDir != "" {
+		fmt.Printf("\nLocal bin directory set to: %s\n", binDir)
+	}
 	return nil
 }

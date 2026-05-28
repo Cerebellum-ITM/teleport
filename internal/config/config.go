@@ -22,10 +22,13 @@ type Profile struct {
 }
 
 // BinProfile describes the destination for `teleport ship` for a given
-// target OS — the SSH host and the absolute path of the remote bin dir.
+// target OS — the SSH host, the absolute path of the remote bin dir,
+// an optional fixed remote filename, and an optional local binary path.
 type BinProfile struct {
-	Host    string `toml:"host"`
-	BinPath string `toml:"bin_path"`
+	Host       string `toml:"host"`
+	BinPath    string `toml:"bin_path"`
+	RemoteName string `toml:"remote_name,omitempty"`
+	BinFile    string `toml:"bin_file,omitempty"`
 }
 
 type GlobalConfig struct {

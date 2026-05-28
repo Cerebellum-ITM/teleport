@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Improved
 - `teleport init` remote directory picker accepts a custom header per invocation (`RunDirPickerWith`), so sync and bin flows show contextual titles instead of a generic "Remote Directory Browser".
+- `teleport init` bin profile setup now asks for an optional `remote_name` (fixed filename on the remote) and `bin_file` (local binary path, auto-detected from `./bin/<os>` patterns). Tab no longer accidentally submits the multi-select — only Space/x toggle and Enter confirms.
+- `teleport ship` resolves the local binary from `profile.bin_file` automatically when configured, skipping the picker on every run. Remote filename priority: `--name` flag > `profile.remote_name` > local basename. Ship output now shows each step inline (uploading → chmod → moving) with ✓ confirmation, plus a final summary line with destination path, OS, and elapsed time.
 
 ## [0.1.4] - 2026-05-28
 

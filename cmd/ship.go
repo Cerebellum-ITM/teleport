@@ -30,17 +30,21 @@ var shipCmd = &cobra.Command{
 	RunE:  runShip,
 }
 
-var shipOKStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+var (
+	shipOKStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	shipDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	shipBoldStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+)
 
 func init() {
 	shipCmd.Flags().StringVar(&shipOS, "os", "", "override target OS (linux|macos|windows)")
 	shipCmd.Flags().StringVar(&shipTo, "to", "", "override remote bin directory for this run")
-	shipCmd.Flags().StringVar(&shipName, "name", "", "rename binary on the remote")
+	shipCmd.Flags().StringVar(&shipName, "name", "", "rename binary on the remote (overrides profile remote_name)")
 	rootCmd.AddCommand(shipCmd)
 }
 
 func runShip(_ *cobra.Command, args []string) error {
-	localPath, err := resolveShipBin(args)
+	localPath, profile, err := resolveShipContext(args)
 	if err != nil {
 		return err
 	}
@@ -53,6 +57,7 @@ func runShip(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is not a regular file", localPath)
 	}
 
+	// Determine target OS (flag > auto-detect).
 	targetOS := bindetect.OS(shipOS)
 	if targetOS == "" {
 		targetOS, err = bindetect.Detect(localPath)
@@ -63,23 +68,26 @@ func runShip(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --os %q (expected linux|macos|windows)", shipOS)
 	}
 
-	globalCfg, err := config.LoadGlobal()
-	if err != nil {
-		return fmt.Errorf("load global config: %w", err)
-	}
-	profile, ok := globalCfg.BinProfiles[string(targetOS)]
-	if !ok {
-		return fmt.Errorf("no bin profile configured for %s — run \"teleport init\" and add one", targetOS)
+	// If resolveShipContext gave us a profile already (from BinFile match),
+	// verify its OS matches; otherwise look up by targetOS.
+	if profile == nil {
+		globalCfg, err := config.LoadGlobal()
+		if err != nil {
+			return fmt.Errorf("load global config: %w", err)
+		}
+		p, ok := globalCfg.BinProfiles[string(targetOS)]
+		if !ok {
+			return fmt.Errorf("no bin profile configured for %s — run \"teleport init\" and add one", targetOS)
+		}
+		profile = &p
 	}
 
+	// Resolve destination dir and remote filename.
 	binDir := profile.BinPath
 	if shipTo != "" {
 		binDir = shipTo
 	}
-	remoteName := shipName
-	if remoteName == "" {
-		remoteName = filepath.Base(localPath)
-	}
+	remoteName := resolveRemoteName(localPath, profile)
 
 	host, err := resolveSSHHost(profile.Host)
 	if err != nil {
@@ -91,27 +99,34 @@ func runShip(_ *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
+	start := time.Now()
 	tmpDir := fmt.Sprintf("/tmp/teleport-ship-%d-%d", os.Getpid(), time.Now().UnixNano())
 	tmpPath := tmpDir + "/" + remoteName
-	log.Info("Uploading", "to", profile.Host+":"+tmpPath)
+	finalPath := binDir + "/" + remoteName
+
+	// Step 1: upload.
+	printShipStep("uploading", localPath, profile.Host+":"+tmpPath)
 	if err := client.UploadFile(localPath, tmpPath); err != nil {
 		return fmt.Errorf("upload: %w", err)
 	}
+	printShipDone("uploaded")
 
+	// Step 2: chmod.
+	printShipStep("chmod +x", "", "")
 	if _, err := client.RunCommand("chmod +x " + sshpkg.ShellQuote(tmpPath)); err != nil {
 		return fmt.Errorf("chmod: %w", err)
 	}
+	printShipDone("done")
 
-	finalPath := binDir + "/" + remoteName
+	// Step 3: move into bin dir (with optional sudo).
+	printShipStep("moving", "", profile.Host+":"+finalPath)
+	moveCmd := fmt.Sprintf("mv -f %s %s",
+		sshpkg.ShellQuote(tmpPath), sshpkg.ShellQuote(finalPath))
+	usedSudo := false
 	writable, err := client.RemoteWritable(binDir)
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", binDir, err)
 	}
-
-	moveCmd := fmt.Sprintf("mv -f %s %s",
-		sshpkg.ShellQuote(tmpPath), sshpkg.ShellQuote(finalPath))
-
-	usedSudo := false
 	if writable {
 		if _, err := client.RunCommand(moveCmd); err != nil {
 			return fmt.Errorf("mv: %w", err)
@@ -122,16 +137,134 @@ func runShip(_ *cobra.Command, args []string) error {
 			return err
 		}
 	}
+	printShipDone("done")
 
+	// Cleanup tmp dir.
 	_, _ = client.RunCommand("rmdir " + sshpkg.ShellQuote(tmpDir))
 
-	suffix := string(targetOS)
+	elapsed := time.Since(start).Round(time.Millisecond)
+
+	// Final summary line.
+	sudoTag := ""
 	if usedSudo {
-		suffix += ", sudo"
+		sudoTag = shipDimStyle.Render(" (sudo)")
 	}
-	fmt.Printf("%s shipped %s → %s:%s (%s)\n",
-		shipOKStyle.Render(""), remoteName, profile.Host, finalPath, suffix)
+	fmt.Printf("\n%s %s → %s%s\n",
+		shipOKStyle.Render(" shipped"),
+		shipBoldStyle.Render(remoteName),
+		shipBoldStyle.Render(profile.Host+":"+finalPath),
+		sudoTag,
+	)
+	fmt.Printf("   %s  %s\n",
+		shipDimStyle.Render(string(targetOS)),
+		shipDimStyle.Render(elapsed.String()),
+	)
+
+	if err := config.TouchLastSync(); err != nil {
+		log.Warn("could not update last sync timestamp", "err", err)
+	}
 	return nil
+}
+
+func printShipStep(verb, from, to string) {
+	var msg string
+	switch {
+	case from != "" && to != "":
+		msg = fmt.Sprintf("  %s  %s → %s", verb, from, to)
+	case to != "":
+		msg = fmt.Sprintf("  %s  %s", verb, to)
+	default:
+		msg = fmt.Sprintf("  %s", verb)
+	}
+	fmt.Printf("%s ", shipDimStyle.Render(msg))
+}
+
+func printShipDone(label string) {
+	fmt.Printf("%s\n", shipOKStyle.Render("✓ "+label))
+}
+
+// resolveShipContext returns the local binary path and, when a profile
+// BinFile is configured and no explicit arg was passed, also pre-resolves
+// the matching BinProfile (to avoid a second lookup by OS later).
+func resolveShipContext(args []string) (string, *config.BinProfile, error) {
+	// Explicit arg always wins; profile lookup happens by OS later.
+	if len(args) > 0 {
+		return args[0], nil, nil
+	}
+
+	globalCfg, err := config.LoadGlobal()
+	if err != nil {
+		return "", nil, fmt.Errorf("load global config: %w", err)
+	}
+
+	// If any bin profile has a BinFile configured, try to auto-resolve.
+	// If --os is set, narrow to that profile; otherwise try all profiles.
+	for osKey, p := range globalCfg.BinProfiles {
+		if shipOS != "" && osKey != shipOS {
+			continue
+		}
+		if p.BinFile != "" {
+			pCopy := p
+			return p.BinFile, &pCopy, nil
+		}
+	}
+
+	// Fall back to bin-dir / picker.
+	localCfg, err := config.LoadLocal()
+	if err != nil {
+		return "", nil, fmt.Errorf("load local config: %w", err)
+	}
+	if localCfg.BinDir == "" {
+		return "", nil, fmt.Errorf("no binary specified and no bin-dir or bin_file configured\nhint: run `teleport config set bin-dir ./bin` or pass the binary path directly")
+	}
+
+	entries, err := os.ReadDir(localCfg.BinDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("read bin-dir %s: %w", localCfg.BinDir, err)
+	}
+
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(files)
+
+	if len(files) == 0 {
+		return "", nil, fmt.Errorf("no files found in bin-dir %s", localCfg.BinDir)
+	}
+	if len(files) == 1 {
+		return filepath.Join(localCfg.BinDir, files[0]), nil, nil
+	}
+
+	var chosen string
+	opts := make([]huh.Option[string], len(files))
+	for i, f := range files {
+		opts[i] = huh.NewOption(f, filepath.Join(localCfg.BinDir, f))
+	}
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title(fmt.Sprintf("Select binary from %s", localCfg.BinDir)).
+			Options(opts...).
+			Value(&chosen),
+	))
+	if err := form.Run(); err != nil {
+		return "", nil, fmt.Errorf("binary picker: %w", err)
+	}
+	return chosen, nil, nil
+}
+
+// resolveRemoteName picks the destination filename in priority order:
+// --name flag > profile.RemoteName > local basename.
+func resolveRemoteName(localPath string, profile *config.BinProfile) string {
+	if shipName != "" {
+		return shipName
+	}
+	if profile.RemoteName != "" {
+		return profile.RemoteName
+	}
+	return filepath.Base(localPath)
 }
 
 // resolveSSHHost looks up name in ~/.ssh/config; falls back to a raw
@@ -163,65 +296,11 @@ func moveWithSudo(client *sshpkg.Client, host sshpkg.Host, moveCmd, hostName, tm
 		return fmt.Errorf("aborted — binary left at %s:%s", hostName, tmpPath)
 	}
 
-	// -S reads password from stdin; -p '' suppresses the prompt label.
 	sudoSCmd := "sudo -S -p '' -- sh -c " + sshpkg.ShellQuote(moveCmd)
 	if _, err := client.RunCommandStdin(sudoSCmd, pw+"\n"); err != nil {
 		return fmt.Errorf("sudo mv failed: %w", err)
 	}
 	return nil
-}
-
-// resolveShipBin returns the local binary path to ship.
-// If an explicit arg was given, use it directly.
-// Otherwise, read bin_dir from local config and pick from the files there.
-func resolveShipBin(args []string) (string, error) {
-	if len(args) > 0 {
-		return args[0], nil
-	}
-
-	localCfg, err := config.LoadLocal()
-	if err != nil {
-		return "", fmt.Errorf("load local config: %w", err)
-	}
-	if localCfg.BinDir == "" {
-		return "", fmt.Errorf("no binary specified and no bin-dir configured\nhint: run `teleport config set bin-dir ./bin` or pass the binary path directly")
-	}
-
-	entries, err := os.ReadDir(localCfg.BinDir)
-	if err != nil {
-		return "", fmt.Errorf("read bin-dir %s: %w", localCfg.BinDir, err)
-	}
-
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			files = append(files, e.Name())
-		}
-	}
-	sort.Strings(files)
-
-	if len(files) == 0 {
-		return "", fmt.Errorf("no files found in bin-dir %s", localCfg.BinDir)
-	}
-	if len(files) == 1 {
-		return filepath.Join(localCfg.BinDir, files[0]), nil
-	}
-
-	var chosen string
-	opts := make([]huh.Option[string], len(files))
-	for i, f := range files {
-		opts[i] = huh.NewOption(f, filepath.Join(localCfg.BinDir, f))
-	}
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title(fmt.Sprintf("Select binary from %s", localCfg.BinDir)).
-			Options(opts...).
-			Value(&chosen),
-	))
-	if err := form.Run(); err != nil {
-		return "", fmt.Errorf("binary picker: %w", err)
-	}
-	return chosen, nil
 }
 
 func promptSudoPassword(host sshpkg.Host) (string, error) {
