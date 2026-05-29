@@ -115,15 +115,15 @@ func runShip(_ *cobra.Command, args []string) error {
 		sshpkg.ShellQuote(tmpFinalPath), sshpkg.ShellQuote(finalPath))
 	usedSudo := false
 
-	header := fmt.Sprintf("Shipping %s → %s:%s", localBasename, profile.Host, finalPath)
+	header := fmt.Sprintf("󱓞  Shipping %s → %s:%s", localBasename, profile.Host, finalPath)
 
-	stepNames := []string{fmt.Sprintf("uploading   %s", localBasename)}
+	stepNames := []string{fmt.Sprintf("󰕒  uploading   %s", localBasename)}
 	if needsRename {
-		stepNames = append(stepNames, fmt.Sprintf("renaming    %s → %s", localBasename, remoteName))
+		stepNames = append(stepNames, fmt.Sprintf("󰑕  renaming    %s → %s", localBasename, remoteName))
 	}
 	stepNames = append(stepNames,
-		"chmod +x",
-		fmt.Sprintf("moving   → %s:%s", profile.Host, finalPath),
+		"󰯄  chmod +x",
+		fmt.Sprintf("󰔰  moving   → %s:%s", profile.Host, finalPath),
 	)
 
 	steps := []tui.ShipStepFunc{
@@ -133,8 +133,16 @@ func runShip(_ *cobra.Command, args []string) error {
 				if total > 0 {
 					pct = int(written * 100 / total)
 				}
-				setExtra(fmt.Sprintf("  %s / %s  %d%%",
-					tui.HumanBytes(written), tui.HumanBytes(total), pct))
+				// Progress bar sized to fill the terminal, leaving room for stats.
+				barW := tui.TermWidth() - 55
+				if barW < 8 {
+					barW = 8
+				} else if barW > 40 {
+					barW = 40
+				}
+				bar := tui.ProgressBar(written, total, barW)
+				setExtra(fmt.Sprintf("  %s  %s / %s  %d%%",
+					bar, tui.HumanBytes(written), tui.HumanBytes(total), pct))
 			})
 		},
 	}
@@ -183,7 +191,7 @@ func runShip(_ *cobra.Command, args []string) error {
 		sudoTag = shipDimStyle.Render(" (sudo)")
 	}
 	fmt.Printf("  %s  %s → %s%s\n",
-		shipOKStyle.Render("shipped"),
+		shipOKStyle.Render("󰗠  shipped"),
 		shipBoldStyle.Render(remoteName),
 		shipBoldStyle.Render(profile.Host+":"+finalPath),
 		sudoTag,

@@ -2,8 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
+	"unsafe"
 
 	lipgloss "charm.land/lipgloss/v2"
 )
@@ -14,6 +18,7 @@ var (
 	slErrStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	slSkipStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	slElapsedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	slBarStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
 )
 
 var slSpinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -28,7 +33,7 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 	errs := make([]error, len(steps))
 	n := len(steps)
 
-	fmt.Printf("\n  %s\n\n", spHeaderStyle.Render(header))
+	fmt.Printf("\n  %s\n", spHeaderStyle.Render(header))
 
 	// Print all steps as pending so the full list is visible from the start.
 	for _, name := range stepNames {
@@ -64,12 +69,11 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 					ex := extra
 					mu.Unlock()
 					spin := slSpinFrames[frame%len(slSpinFrames)]
-					// Move up to step line, erase it, print spinner, move back down.
 					fmt.Printf("\033[%dA\033[2K\r  %s  %s%s\033[%dB\r",
 						linesUp,
 						slActiveStyle.Render(spin),
 						slActiveStyle.Render(name),
-						slActiveStyle.Render(ex),
+						ex, // already styled by caller
 						linesUp)
 					frame++
 				}
@@ -83,7 +87,6 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 
 		elapsed := time.Since(stepStart).Round(time.Millisecond)
 
-		// Erase spinner line and print final status, then return cursor to bottom.
 		icon := slDoneStyle.Render("✓")
 		nameStyle := slDoneStyle
 		if err != nil {
@@ -105,6 +108,49 @@ func RunShipProgress(header string, stepNames []string, steps []ShipStepFunc) ([
 
 	fmt.Print("\n")
 	return errs, nil
+}
+
+// TermWidth returns the terminal column count, defaulting to 120.
+func TermWidth() int {
+	type winsz struct{ Row, Col, Xpix, Ypix uint16 }
+	ws := winsz{}
+	if _, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		os.Stdout.Fd(),
+		syscall.TIOCGWINSZ,
+		uintptr(unsafe.Pointer(&ws)),
+	); errno == 0 && ws.Col > 0 {
+		return int(ws.Col)
+	}
+	return 120
+}
+
+// ProgressBar returns a "[===>   ]" style bar of the given width.
+func ProgressBar(written, total int64, barWidth int) string {
+	if barWidth <= 0 || total <= 0 {
+		return ""
+	}
+	pct := float64(written) / float64(total)
+	filled := int(float64(barWidth) * pct)
+	if filled > barWidth {
+		filled = barWidth
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for i := 0; i < barWidth; i++ {
+		switch {
+		case i < filled-1:
+			b.WriteByte('=')
+		case i == filled-1 && written < total:
+			b.WriteByte('>')
+		case i < filled:
+			b.WriteByte('=')
+		default:
+			b.WriteByte(' ')
+		}
+	}
+	b.WriteByte(']')
+	return slBarStyle.Render(b.String())
 }
 
 // HumanBytes formats a byte count as a human-readable string.
