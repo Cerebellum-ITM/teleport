@@ -43,3 +43,4 @@
 3. `internal/tui` models must not perform I/O directly — they receive data via messages and emit selections; callers do the I/O.
 4. Config writes happen only after all interactive steps complete successfully — a cancelled TUI flow must not write partial config.
 5. `go build` must produce a zero-dependency static binary (no CGO).
+6. SFTP uploads must never report success on a truncated transfer: every upload closes the remote handle explicitly and propagates its error, and verifies the remote size equals the local size before returning `nil`. The SFTP write packet stays within OpenSSH's `SFTP_MAX_MSG_LENGTH` (32 KB via `MaxPacket(32768)`); throughput comes from concurrent/pipelined writes, never from oversized packets.
