@@ -138,7 +138,7 @@ func Connect(host Host) (*Client, error) {
 	}
 
 	sftpClient, err := sftp.NewClient(sc,
-		sftp.MaxPacketUnchecked(1<<22), // 4 MiB writes; SSH layer handles channel fragmentation
+		sftp.MaxPacket(32768), // 32 KB: max payload accepted by OpenSSH sftp-server (SFTP_MAX_MSG_LENGTH)
 		sftp.UseConcurrentWrites(true),
 	)
 	if err != nil {
@@ -227,7 +227,7 @@ func ConnectWithPassword(host Host, password string) (*Client, error) {
 	}
 
 	sftpClient, err := sftp.NewClient(sc,
-		sftp.MaxPacketChecked(1<<20),
+		sftp.MaxPacket(32768), // MaxPacketChecked rejects >32 KB; this is the safe universal payload
 		sftp.UseConcurrentWrites(true),
 	)
 	if err != nil {
@@ -298,6 +298,11 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 	}
 	defer src.Close()
 
+	stat, err := src.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", localPath, err)
+	}
+
 	if err := c.SFTP.MkdirAll(filepath.Dir(remotePath)); err != nil {
 		return fmt.Errorf("mkdir remote %s: %w", filepath.Dir(remotePath), err)
 	}
@@ -306,12 +311,17 @@ func (c *Client) UploadFile(localPath, remotePath string) error {
 	if err != nil {
 		return fmt.Errorf("create remote %s: %w", remotePath, err)
 	}
-	defer dst.Close()
+	defer dst.Close() // safety net for error paths; the success path closes explicitly below
 
 	if _, err := dst.ReadFrom(src); err != nil {
 		return fmt.Errorf("upload %s: %w", localPath, err)
 	}
-	return nil
+	// Some SFTP servers ack buffered writes but only report failure on close,
+	// so the close error must be checked or a discarded upload looks successful.
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close remote %s: %w", remotePath, err)
+	}
+	return c.verifyUpload(remotePath, stat.Size())
 }
 
 // UploadFileProgress is like UploadFile but calls progress(written, total)
@@ -337,18 +347,23 @@ func (c *Client) UploadFileProgress(localPath, remotePath string, progress func(
 	if err != nil {
 		return fmt.Errorf("create remote %s: %w", remotePath, err)
 	}
-	defer dst.Close()
+	defer dst.Close() // safety net for error paths; the success path closes explicitly below
 
 	pr := &progressReader{r: src, total: total, fn: progress}
 	if _, err := dst.ReadFrom(pr); err != nil {
 		return fmt.Errorf("upload %s: %w", localPath, err)
 	}
-	return nil
+	// Some SFTP servers ack buffered writes but only report failure on close,
+	// so the close error must be checked or a discarded upload looks successful.
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close remote %s: %w", remotePath, err)
+	}
+	return c.verifyUpload(remotePath, total)
 }
 
 // progressReader wraps a reader and calls fn after each Read so callers can
-// track upload progress. Using ReadFrom on sftp.File reads in MaxPacket-sized
-// chunks, which is the fast concurrent-write path.
+// track upload progress. Exposing Size() lets sftp.File.ReadFrom take the
+// concurrent-write path (pipelined writes) instead of the slow sequential one.
 type progressReader struct {
 	r     io.Reader
 	total int64
@@ -365,6 +380,10 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
+// Size reports the total upload size so sftp.File.ReadFrom selects the
+// concurrent path; it does not satisfy io.Seeker, only the size hint.
+func (p *progressReader) Size() int64 { return p.total }
+
 // UploadBytes writes content to remotePath, creating parent directories.
 func (c *Client) UploadBytes(remotePath string, content []byte) error {
 	if err := c.SFTP.MkdirAll(filepath.Dir(remotePath)); err != nil {
@@ -375,10 +394,29 @@ func (c *Client) UploadBytes(remotePath string, content []byte) error {
 	if err != nil {
 		return fmt.Errorf("create remote %s: %w", remotePath, err)
 	}
-	defer dst.Close()
+	defer dst.Close() // safety net for error paths; the success path closes explicitly below
 
 	if _, err := dst.Write(content); err != nil {
 		return fmt.Errorf("write %s: %w", remotePath, err)
+	}
+	// Some SFTP servers ack buffered writes but only report failure on close,
+	// so the close error must be checked or a discarded upload looks successful.
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close remote %s: %w", remotePath, err)
+	}
+	return c.verifyUpload(remotePath, int64(len(content)))
+}
+
+// verifyUpload confirms the remote file size matches want. It guards against
+// servers that ack writes but discard the payload, which would otherwise leave
+// a 0-byte file reported as a successful upload.
+func (c *Client) verifyUpload(remotePath string, want int64) error {
+	st, err := c.SFTP.Stat(remotePath)
+	if err != nil {
+		return fmt.Errorf("verify remote %s: %w", remotePath, err)
+	}
+	if st.Size() != want {
+		return fmt.Errorf("verify remote %s: size mismatch (local %d, remote %d)", remotePath, want, st.Size())
 	}
 	return nil
 }
