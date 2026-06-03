@@ -4,15 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.1] - 2026-05-08
-
-### Added
-
-- Added a comprehensive `README.md` that outlines the project description, usage flow, command reference table, installation steps, SSH authentication setup, configuration profiles, and the tech stack.
-- Documented installation commands and required build targets in the `README.md`.
-- Listed supported tech-stack components and their versions in the `README.md`.
-- Provided guidance on SSH key handling and profile configuration in the `README.md`.
-
 ## [0.2.0] - 2026-06-02
 
 ### Added
@@ -61,9 +52,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `teleport status [profile]` subcommand — compares local files against the remote via SHA256 over SFTP and reports drift. Default mode checks all `git ls-files`; `--pending`/`-p` checks only files in commits ahead of upstream + working-tree changes (+ untracked when persisted), and flags remote files that should have been deleted by a beamed commit.
 - `teleport beam` subcommand — pick local commits ahead of upstream and send their file contents to the remote (cherry-pick style). Multi-select TUI for commits + file picker pre-selected; honors per-commit file content via `git show`, removes deleted files on remote.
 - `teleport beam --then-sync` / `-s` — after beaming the selected commits, run a working-tree sync over the same SSH connection so dirty (uncommitted) changes overwrite the beamed snapshot.
-- `teleport config get|set|unset` subcommand to persist per-working-directory defaults (currently `sync-untracked` and `default-profile`) in the existing local TOML
-- `sync_untracked` field in `LocalConfig`; when `true`, `teleport sync` includes untracked files without requiring `-u`
-- `teleport sync` warns when untracked files exist and were not included, suggesting `-u` or persisting the default via `teleport config set sync-untracked true`
 - `README.md` — project overview, commands, installation, SSH auth, and configuration reference
 - `bin/` added to `.gitignore` — binaries are never committed
 - `Makefile` `build` target now outputs to `./bin/teleport` and hot-copies it to `~/.local/bin` for local dev iteration
@@ -87,6 +75,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SSH authentication: when `IdentityFile` is set in `~/.ssh/config`, only the matching agent signer is offered (fingerprint comparison) — prevents exhausting `MaxAuthTries` when the agent holds many keys
 - `IdentityFile` now accepts both the private key path and the `.pub` path directly (1Password exports only the public key)
 - Host picker: filter input is active from launch; `q` key only quits when not in filter mode
+
+## [0.1.2] - 2026-05-12
+
+### Added
+- `teleport config get|set|unset` subcommand to persist per-working-directory defaults (currently `sync-untracked` and `default-profile`) in the existing local TOML
+- `sync_untracked` field in `LocalConfig`; when `true`, `teleport sync` includes untracked files without requiring `-u`
+- `teleport sync` warns when untracked files exist and were not included, suggesting `-u` or persisting the default via `teleport config set sync-untracked true`
+
+## [0.1.1] - 2026-05-08
+
+### Added
+- Added a comprehensive `README.md` that outlines the project description, usage flow, command reference table, installation steps, SSH authentication setup, configuration profiles, and the tech stack.
+- Documented installation commands and required build targets in the `README.md`.
+- Listed supported tech-stack components and their versions in the `README.md`.
+- Provided guidance on SSH key handling and profile configuration in the `README.md`.
 
 ## [0.1.0] - 2026-05-06
 
