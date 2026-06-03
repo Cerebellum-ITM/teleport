@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Listed supported tech-stack components and their versions in the `README.md`.
 - Provided guidance on SSH key handling and profile configuration in the `README.md`.
 
-## [Unreleased]
+## [0.2.0] - 2026-06-02
 
 ### Added
 - `teleport ship [bin]` — deploys a locally built CLI binary to a remote `bin/` directory in three automated steps: SFTP upload to a `/tmp` staging path → `chmod +x` → `mv` into the target dir (with automatic `sudo` escalation when the SSH user cannot write the destination). Target OS is auto-detected from magic bytes (ELF→linux, Mach-O incl. fat binary→macos, MZ/PE→windows); `--os` overrides detection. `--to` overrides the configured `bin_path` for the current run only. `--name` renames the binary on the remote. When `sudo` is needed, `sudo -n` is tried first; if a password is required a masked `huh` prompt appears, and on cancellation the binary is left under the staging path with a message pointing there. New `internal/bindetect` package handles magic-byte sniffing.
