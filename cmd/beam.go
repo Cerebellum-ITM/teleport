@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
@@ -149,16 +150,22 @@ func runBeam(cmd *cobra.Command, args []string) error {
 
 	failedPaths := make(map[string]bool)
 
+	// Per-commit colors, computed from the full change set the picker used so
+	// the send view matches the file picker exactly.
+	styles := tui.BeamFileStyles(allChanges, selectedCommits)
+
 	if len(toUpload) > 0 {
 		byPath := make(map[string]git.FileChange, len(toUpload))
 		paths := make([]string, len(toUpload))
+		markers := make(map[string]lipgloss.Style, len(toUpload))
 		for i, c := range toUpload {
 			byPath[c.Path] = c
 			paths[i] = c.Path
+			markers[c.Path] = styles[c.SHA]
 		}
 
 		header := fmt.Sprintf("Beaming %d file(s) to %s:%s", len(paths), profile.Host, profile.Path)
-		failed, err := tui.RunSyncProgress(header, paths, func(path string) error {
+		failed, err := tui.RunSyncProgressMarked(header, paths, markers, func(path string) error {
 			fc := byPath[path]
 			content, err := git.FileAtCommit(fc.SHA, fc.Path)
 			if err != nil {

@@ -59,18 +59,19 @@ type BeamFilePicker struct {
 	filter   int                       // -1 = all commits, else index into legend
 }
 
-func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFilePicker {
-	// Each file's SHA is the commit whose blob will be uploaded. Walk the
-	// selected commits in display order and assign a palette color to every
-	// commit that actually contributes a file (so the legend stays honest).
+// beamCommitColors walks the commits in display order and assigns a palette
+// color to every commit that contributes at least one file in changes. It is
+// the single source of truth for the file picker and the send view, so colors
+// stay consistent between them. Returns the contributing commits (legend), the
+// SHA→display-order index, and the SHA→style map.
+func beamCommitColors(changes []git.FileChange, commits []git.Commit) (legend []git.Commit, order map[string]int, shaStyle map[string]lipgloss.Style) {
 	present := make(map[string]bool, len(changes))
 	for _, c := range changes {
 		present[c.SHA] = true
 	}
 
-	shaStyle := make(map[string]lipgloss.Style, len(commits))
-	order := make(map[string]int, len(commits))
-	var legend []git.Commit
+	shaStyle = make(map[string]lipgloss.Style, len(commits))
+	order = make(map[string]int, len(commits))
 	for _, cm := range commits {
 		if !present[cm.SHA] {
 			continue
@@ -79,6 +80,21 @@ func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFileP
 		order[cm.SHA] = len(legend)
 		legend = append(legend, cm)
 	}
+	return legend, order, shaStyle
+}
+
+// BeamFileStyles returns the per-commit accent style keyed by commit SHA, using
+// the same assignment as the beam file picker. Pass the full change set the
+// picker was built from (not a later subset) so the colors match exactly.
+func BeamFileStyles(changes []git.FileChange, commits []git.Commit) map[string]lipgloss.Style {
+	_, _, shaStyle := beamCommitColors(changes, commits)
+	return shaStyle
+}
+
+func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFilePicker {
+	// Each file's SHA is the commit whose blob will be uploaded. Assign each
+	// contributing commit a palette color (the legend stays honest).
+	legend, order, shaStyle := beamCommitColors(changes, commits)
 
 	// Group files by commit (commit order), alphabetical within each group, so
 	// each block of color reads as one commit and each filter is a contiguous
