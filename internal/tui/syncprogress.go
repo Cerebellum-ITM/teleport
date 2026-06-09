@@ -28,6 +28,13 @@ var (
 	spIconStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
 )
 
+// BeamMarker decorates a file line in the beam send view with its commit's
+// accent color and short SHA.
+type BeamMarker struct {
+	Style lipgloss.Style
+	Short string
+}
+
 type SyncProgress struct {
 	header  string
 	done    []SyncFileDone
@@ -35,7 +42,7 @@ type SyncProgress struct {
 	start   time.Time
 	width   int
 	height  int
-	markers map[string]lipgloss.Style // path → accent style (beam commit color)
+	markers map[string]BeamMarker // path → beam commit color + short SHA
 }
 
 func NewSyncProgress(header string, total int) SyncProgress {
@@ -104,15 +111,18 @@ func (m SyncProgress) View() tea.View {
 	}
 	for _, f := range visible {
 		icon := spIconStyle.Render(fileTypeIcon(f.Path))
-		// Beam tints each file with its commit's color via a leading cube.
-		cube := ""
-		if st, ok := m.markers[f.Path]; ok {
-			cube = st.Render(iconCube)
+		// Beam tags each file with its commit's color (cube) and short SHA.
+		cube, short := "", ""
+		if mk, ok := m.markers[f.Path]; ok {
+			cube = mk.Style.Render(iconCube)
+			if mk.Short != "" {
+				short = mk.Style.Render("["+mk.Short+"] ")
+			}
 		}
 		if f.Err != nil {
-			fmt.Fprintf(&b, "  %s %s%s %s\n", spErrStyle.Render("✗"), cube, icon, spErrStyle.Render(f.Path))
+			fmt.Fprintf(&b, "  %s %s%s %s%s\n", spErrStyle.Render("✗"), cube, icon, short, spErrStyle.Render(f.Path))
 		} else {
-			fmt.Fprintf(&b, "  %s %s%s %s\n", spOKStyle.Render("✓"), cube, icon, f.Path)
+			fmt.Fprintf(&b, "  %s %s%s %s%s\n", spOKStyle.Render("✓"), cube, icon, short, f.Path)
 		}
 	}
 
@@ -283,14 +293,14 @@ func RunSyncProgress(header string, files []string, upload func(string) error) (
 	return runSyncProgress(header, files, nil, upload)
 }
 
-// RunSyncProgressMarked is RunSyncProgress with a per-path accent style: each
-// file line is prefixed with a colored cube (its beam commit color). Used by
-// `teleport beam` so the send view matches the file picker's coloring.
-func RunSyncProgressMarked(header string, files []string, markers map[string]lipgloss.Style, upload func(string) error) ([]string, error) {
+// RunSyncProgressMarked is RunSyncProgress with a per-path marker: each file
+// line is tagged with a colored cube (its beam commit color) and the commit's
+// short SHA. Used by `teleport beam` so the send view matches the file picker.
+func RunSyncProgressMarked(header string, files []string, markers map[string]BeamMarker, upload func(string) error) ([]string, error) {
 	return runSyncProgress(header, files, markers, upload)
 }
 
-func runSyncProgress(header string, files []string, markers map[string]lipgloss.Style, upload func(string) error) ([]string, error) {
+func runSyncProgress(header string, files []string, markers map[string]BeamMarker, upload func(string) error) ([]string, error) {
 	model := NewSyncProgress(header, len(files))
 	model.markers = markers
 	p := tea.NewProgram(model)
