@@ -30,18 +30,28 @@ The beam file picker groups files by the commit they originate from and
 tints each group with a distinct accent so the list reads at a glance. These
 are the only colors that may cycle/repeat; they are assigned to commits in
 display order and reused (mod length) when there are more commits than colors.
-Defined as `beamCommitPalette` in `internal/tui/beamfilepicker.go`.
+Defined as `beamCommitPalette` in `internal/tui/beamfilepicker.go`. The set
+avoids the reserved roles above (green check `82`, red delete `203`, orange
+toggle `214`, grey dim `241`, header `62`, cursor pink `212`).
 
-| Index | lipgloss token            | Color      |
-| ----- | ------------------------- | ---------- |
-| 0     | `lipgloss.Color("39")`    | Blue       |
-| 1     | `lipgloss.Color("170")`   | Magenta    |
-| 2     | `lipgloss.Color("220")`   | Gold       |
-| 3     | `lipgloss.Color("141")`   | Purple     |
-| 4     | `lipgloss.Color("80")`    | Cyan       |
-| 5     | `lipgloss.Color("209")`   | Salmon     |
-| 6     | `lipgloss.Color("43")`    | Teal       |
-| 7     | `lipgloss.Color("147")`   | Periwinkle |
+| Index | lipgloss token            | Color         |
+| ----- | ------------------------- | ------------- |
+| 0     | `lipgloss.Color("39")`    | Blue          |
+| 1     | `lipgloss.Color("45")`    | Cyan          |
+| 2     | `lipgloss.Color("43")`    | Teal          |
+| 3     | `lipgloss.Color("81")`    | Sky           |
+| 4     | `lipgloss.Color("220")`   | Gold          |
+| 5     | `lipgloss.Color("215")`   | Light orange  |
+| 6     | `lipgloss.Color("208")`   | Orange        |
+| 7     | `lipgloss.Color("209")`   | Salmon        |
+| 8     | `lipgloss.Color("205")`   | Pink          |
+| 9     | `lipgloss.Color("213")`   | Light magenta |
+| 10    | `lipgloss.Color("199")`   | Deep pink     |
+| 11    | `lipgloss.Color("171")`   | Magenta       |
+| 12    | `lipgloss.Color("141")`   | Purple        |
+| 13    | `lipgloss.Color("99")`    | Violet        |
+| 14    | `lipgloss.Color("147")`   | Periwinkle    |
+| 15    | `lipgloss.Color("105")`   | Indigo        |
 
 ## Typography
 

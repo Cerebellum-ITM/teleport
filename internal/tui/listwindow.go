@@ -58,3 +58,18 @@ func scrollDownHint(n int) string {
 	}
 	return dimStyle.Render(fmt.Sprintf("  ↓ %d more", n))
 }
+
+// truncate shortens s to at most n runes, appending an ellipsis when cut.
+func truncate(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n == 1 {
+		return "…"
+	}
+	return string(r[:n-1]) + "…"
+}

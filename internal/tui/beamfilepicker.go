@@ -23,25 +23,40 @@ var deleteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 // more commits than colors. Documented in context/ui-context.md.
 var beamCommitPalette = []lipgloss.Style{
 	lipgloss.NewStyle().Foreground(lipgloss.Color("39")),  // blue
-	lipgloss.NewStyle().Foreground(lipgloss.Color("170")), // magenta
-	lipgloss.NewStyle().Foreground(lipgloss.Color("220")), // gold
-	lipgloss.NewStyle().Foreground(lipgloss.Color("141")), // purple
-	lipgloss.NewStyle().Foreground(lipgloss.Color("80")),  // cyan
-	lipgloss.NewStyle().Foreground(lipgloss.Color("209")), // salmon
+	lipgloss.NewStyle().Foreground(lipgloss.Color("45")),  // cyan
 	lipgloss.NewStyle().Foreground(lipgloss.Color("43")),  // teal
+	lipgloss.NewStyle().Foreground(lipgloss.Color("81")),  // sky
+	lipgloss.NewStyle().Foreground(lipgloss.Color("220")), // gold
+	lipgloss.NewStyle().Foreground(lipgloss.Color("215")), // light orange
+	lipgloss.NewStyle().Foreground(lipgloss.Color("208")), // orange
+	lipgloss.NewStyle().Foreground(lipgloss.Color("209")), // salmon
+	lipgloss.NewStyle().Foreground(lipgloss.Color("205")), // pink
+	lipgloss.NewStyle().Foreground(lipgloss.Color("213")), // light magenta
+	lipgloss.NewStyle().Foreground(lipgloss.Color("199")), // deep pink
+	lipgloss.NewStyle().Foreground(lipgloss.Color("171")), // magenta
+	lipgloss.NewStyle().Foreground(lipgloss.Color("141")), // purple
+	lipgloss.NewStyle().Foreground(lipgloss.Color("99")),  // violet
 	lipgloss.NewStyle().Foreground(lipgloss.Color("147")), // periwinkle
+	lipgloss.NewStyle().Foreground(lipgloss.Color("105")), // indigo
 }
+
+// beamRange is the contiguous [lo, hi) slice of m.changes that belongs to one
+// commit, used by the per-commit filter view.
+type beamRange struct{ lo, hi int }
 
 type BeamFilePicker struct {
 	changes  []git.FileChange
 	selected map[int]bool
 	cursor   int
 	height   int
+	width    int
 	done     bool
 	quitting bool
 
 	legend   []git.Commit              // contributing commits, in display order
 	shaStyle map[string]lipgloss.Style // commit SHA → accent style
+	ranges   []beamRange               // per-legend-index file range in m.changes
+	filter   int                       // -1 = all commits, else index into legend
 }
 
 func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFilePicker {
@@ -66,7 +81,8 @@ func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFileP
 	}
 
 	// Group files by commit (commit order), alphabetical within each group, so
-	// each block of color reads as one commit.
+	// each block of color reads as one commit and each filter is a contiguous
+	// slice.
 	sorted := make([]git.FileChange, len(changes))
 	copy(sorted, changes)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -76,6 +92,18 @@ func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFileP
 		return sorted[i].Path < sorted[j].Path
 	})
 
+	// Precompute the contiguous file range for each contributing commit.
+	ranges := make([]beamRange, len(legend))
+	for i := 0; i < len(sorted); {
+		ord := order[sorted[i].SHA]
+		j := i
+		for j < len(sorted) && order[sorted[j].SHA] == ord {
+			j++
+		}
+		ranges[ord] = beamRange{lo: i, hi: j}
+		i = j
+	}
+
 	selected := make(map[int]bool, len(sorted))
 	for i := range sorted {
 		selected[i] = true
@@ -84,43 +112,75 @@ func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFileP
 		changes:  sorted,
 		selected: selected,
 		height:   24,
+		width:    80,
 		legend:   legend,
 		shaStyle: shaStyle,
+		ranges:   ranges,
+		filter:   -1,
 	}
 }
 
 func (m BeamFilePicker) Init() tea.Cmd { return nil }
 
+// activeRange returns the [lo, hi) slice of m.changes currently visible given
+// the commit filter.
+func (m BeamFilePicker) activeRange() (lo, hi int) {
+	if m.filter < 0 || m.filter >= len(m.ranges) {
+		return 0, len(m.changes)
+	}
+	return m.ranges[m.filter].lo, m.ranges[m.filter].hi
+}
+
+// cycleFilter moves the commit filter by delta (wrapping through the "all"
+// pseudo-entry at position 0) and parks the cursor at the new range's start.
+func (m *BeamFilePicker) cycleFilter(delta int) {
+	if len(m.legend) == 0 {
+		return
+	}
+	total := len(m.legend) + 1 // +1 for the "all" entry
+	pos := (m.filter + 1 + delta + total) % total
+	m.filter = pos - 1
+	lo, _ := m.activeRange()
+	m.cursor = lo
+}
+
 func (m BeamFilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
+		m.width = msg.Width
 	case tea.KeyPressMsg:
+		lo, hi := m.activeRange()
 		switch msg.String() {
 		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
 		case "up", "k":
-			if m.cursor > 0 {
+			if m.cursor > lo {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.changes)-1 {
+			if m.cursor < hi-1 {
 				m.cursor++
 			}
+		case "left", "h":
+			m.cycleFilter(-1)
+		case "right", "l":
+			m.cycleFilter(1)
 		case "tab", " ":
-			if len(m.changes) > 0 {
+			if hi > lo {
 				m.selected[m.cursor] = !m.selected[m.cursor]
 			}
 		case "a":
+			// Toggle every file in the active filter as a group.
 			allOn := true
-			for i := range m.changes {
+			for i := lo; i < hi; i++ {
 				if !m.selected[i] {
 					allOn = false
 					break
 				}
 			}
-			for i := range m.changes {
+			for i := lo; i < hi; i++ {
 				m.selected[i] = !allOn
 			}
 		case "enter":
@@ -137,29 +197,30 @@ func (m BeamFilePicker) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(headerStyle.Render("  Files from selected commits") + "\n\n")
+	b.WriteString(headerStyle.Render("  Files from selected commits") + "\n")
 
-	// Legend: one line per contributing commit — colored cube + short SHA +
-	// subject — so each color is tied to a recognizable commit.
-	for _, cm := range m.legend {
+	// Status line: in "all" mode a count + filter hint; in filtered mode the
+	// active commit (colored cube + short SHA + subject + position).
+	if m.filter < 0 {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("  %d commits  ◂ ←/→ filtrar por commit ▸", len(m.legend))) + "\n")
+	} else {
+		cm := m.legend[m.filter]
 		style := m.shaStyle[cm.SHA]
-		b.WriteString("  " + style.Render(iconCube+cm.Short) + "  " + cm.Subject + "\n")
+		subj := truncate(cm.Subject, m.width-32)
+		pos := dimStyle.Render(fmt.Sprintf("   ◂ %d/%d ▸", m.filter+1, len(m.legend)))
+		b.WriteString("  " + style.Render(iconCube+cm.Short) + "  " + subj + pos + "\n")
 	}
-	if len(m.legend) > 0 {
-		b.WriteString("\n")
-	}
+	b.WriteString("\n")
 
-	// chrome: header(1) + blank(1) + footer-block(2) = 4 lines, plus the
-	// legend block (one line per commit + a trailing blank) when present.
-	chrome := 4
-	if len(m.legend) > 0 {
-		chrome += len(m.legend) + 1
-	}
-	win := computeWindow(len(m.changes), m.cursor, m.height-chrome)
+	// chrome: header(1) + status(1) + blank(1) + blank(1) + footer(1) = 5 lines.
+	lo, hi := m.activeRange()
+	n := hi - lo
+	win := computeWindow(n, m.cursor-lo, m.height-5)
 	if h := scrollUpHint(win.above); h != "" {
 		b.WriteString(h + "\n")
 	}
-	for i := win.start; i < win.end; i++ {
+	for k := win.start; k < win.end; k++ {
+		i := lo + k
 		c := m.changes[i]
 		prefix := "    "
 		if i == m.cursor {
@@ -184,7 +245,7 @@ func (m BeamFilePicker) View() tea.View {
 		b.WriteString(h + "\n")
 	}
 
-	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  enter=confirm  ctrl+c=quit") + "\n")
+	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  ←/→=commit  enter=confirm  ctrl+c=quit") + "\n")
 	return tea.NewView(b.String())
 }
 
