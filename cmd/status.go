@@ -136,7 +136,7 @@ func collectStatusTargets(includeUntracked bool) ([]statusTarget, error) {
 		for i := len(commits) - 1; i >= 0; i-- {
 			shas = append(shas, commits[i].SHA)
 		}
-		changes, err := git.FilesInCommits(shas)
+		changes, _, err := git.FilesInCommits(shas)
 		if err != nil {
 			return nil, err
 		}

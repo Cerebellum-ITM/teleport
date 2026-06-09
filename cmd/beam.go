@@ -112,7 +112,7 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		shas = append(shas, selectedCommits[i].SHA)
 	}
 
-	allChanges, err := git.FilesInCommits(shas)
+	allChanges, commitPaths, err := git.FilesInCommits(shas)
 	if err != nil {
 		return err
 	}
@@ -191,10 +191,10 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Record commits as sent: a commit counts only if it had at least one file
-	// in this beam and none of its files failed. Persist even on partial
-	// failure so fully-successful commits are not re-sent next time.
-	rememberBeamedCommits(localCfg, profileName, changes, failedPaths)
+	// Record commits as sent: a commit counts only if every path it touched was
+	// uploaded/deleted without error. Persist even on partial failure so
+	// fully-successful commits are not re-sent next time.
+	rememberBeamedCommits(localCfg, profileName, commitPaths, changes, failedPaths)
 
 	if len(failedPaths) > 0 {
 		return fmt.Errorf("%d operation(s) failed", len(failedPaths))
@@ -245,25 +245,21 @@ func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntrac
 	return nil
 }
 
-// rememberBeamedCommits records which commits were fully sent (every file
-// succeeded) and persists the local config. A commit with no files in this
-// beam, or with any failed file, is skipped. Failures are warn-logged.
-func rememberBeamedCommits(cfg *config.LocalConfig, profileName string, changes []git.FileChange, failedPaths map[string]bool) {
-	hasFile := make(map[string]bool)
-	anyFail := make(map[string]bool)
+// rememberBeamedCommits records which commits were fully sent and persists the
+// local config. A commit counts as sent only when every path it touched made it
+// into this beam (i.e. survived the file picker) and uploaded without error —
+// attribution is by path, not by the winning SHA, so a commit whose file was
+// superseded by a newer commit is still credited. Failures are warn-logged.
+func rememberBeamedCommits(cfg *config.LocalConfig, profileName string, commitPaths map[string][]string, changes []git.FileChange, failedPaths map[string]bool) {
+	// covered = paths that were part of this beam and did not fail.
+	covered := make(map[string]bool, len(changes))
 	for _, c := range changes {
-		hasFile[c.SHA] = true
-		if failedPaths[c.Path] {
-			anyFail[c.SHA] = true
+		if !failedPaths[c.Path] {
+			covered[c.Path] = true
 		}
 	}
 
-	var sent []string
-	for sha := range hasFile {
-		if !anyFail[sha] {
-			sent = append(sent, sha)
-		}
-	}
+	sent := commitsFullySent(commitPaths, covered)
 	if len(sent) == 0 {
 		return
 	}
@@ -272,6 +268,28 @@ func rememberBeamedCommits(cfg *config.LocalConfig, profileName string, changes 
 	if err := config.SaveLocal(cfg); err != nil {
 		log.Warn("could not record beamed commits", "err", err)
 	}
+}
+
+// commitsFullySent returns the SHAs whose every touched path is covered. A
+// commit with no recorded paths is skipped (nothing of it was sent).
+func commitsFullySent(commitPaths map[string][]string, covered map[string]bool) []string {
+	var sent []string
+	for sha, paths := range commitPaths {
+		if len(paths) == 0 {
+			continue
+		}
+		all := true
+		for _, p := range paths {
+			if !covered[p] {
+				all = false
+				break
+			}
+		}
+		if all {
+			sent = append(sent, sha)
+		}
+	}
+	return sent
 }
 
 func resolveBranch(explicit string) (string, error) {

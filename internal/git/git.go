@@ -114,14 +114,21 @@ func CommitsAhead() ([]Commit, error) {
 // FilesInCommits accepts shas in chronological order (oldest first) and
 // returns the effective per-file change across them: the latest commit
 // that touched each path wins. Renames split into delete (old) + add (new).
-func FilesInCommits(shas []string) ([]FileChange, error) {
+//
+// It also returns commitPaths: for each sha, the list of paths that commit
+// touched (renames split the same way). Unlike the deduped first return,
+// commitPaths keeps every commit's own paths even when a later commit
+// supersedes the same file — callers attributing work back to commits must
+// use this, not the winning SHA on each FileChange.
+func FilesInCommits(shas []string) ([]FileChange, map[string][]string, error) {
 	byPath := make(map[string]FileChange)
+	commitPaths := make(map[string][]string)
 
 	for _, sha := range shas {
 		cmd := exec.Command("git", "show", "--name-status", "--format=", sha)
 		out, err := cmd.Output()
 		if err != nil {
-			return nil, fmt.Errorf("git show %s: %w", sha, err)
+			return nil, nil, fmt.Errorf("git show %s: %w", sha, err)
 		}
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			if line == "" {
@@ -140,8 +147,10 @@ func FilesInCommits(shas []string) ([]FileChange, error) {
 				old, new := fields[1], fields[2]
 				byPath[old] = FileChange{Path: old, Status: 'D', SHA: sha}
 				byPath[new] = FileChange{Path: new, Status: 'A', SHA: sha}
+				commitPaths[sha] = append(commitPaths[sha], old, new)
 			case code == "A", code == "M", code == "D":
 				byPath[fields[1]] = FileChange{Path: fields[1], Status: rune(code[0]), SHA: sha}
+				commitPaths[sha] = append(commitPaths[sha], fields[1])
 			}
 		}
 	}
@@ -156,7 +165,7 @@ func FilesInCommits(shas []string) ([]FileChange, error) {
 			out[j-1], out[j] = out[j], out[j-1]
 		}
 	}
-	return out, nil
+	return out, commitPaths, nil
 }
 
 // FileAtCommit returns the blob contents of path as of commit sha.
