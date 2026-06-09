@@ -41,6 +41,10 @@ type LocalConfig struct {
 	SyncUntracked  bool      `toml:"sync_untracked,omitempty"`
 	LastSync       time.Time `toml:"last_sync,omitempty"`
 	BinDir         string    `toml:"bin_dir,omitempty"`
+
+	// BeamedCommits maps a profile name to the set of commit SHAs already
+	// beamed to that destination, with the time each was sent.
+	BeamedCommits map[string]map[string]time.Time `toml:"beamed_commits,omitempty"`
 }
 
 func GlobalConfigPath() (string, error) {
@@ -153,6 +157,50 @@ func TouchLastSync() error {
 	}
 	cfg.LastSync = time.Now()
 	return SaveLocal(cfg)
+}
+
+// SentSet returns a membership view of the commits already beamed to profile.
+// The returned map is safe to read even when no commits have been recorded.
+func (c *LocalConfig) SentSet(profile string) map[string]bool {
+	out := make(map[string]bool, len(c.BeamedCommits[profile]))
+	for sha := range c.BeamedCommits[profile] {
+		out[sha] = true
+	}
+	return out
+}
+
+// PruneBeamed drops every recorded SHA for profile that is not present in keep.
+// Caller is responsible for persisting via SaveLocal.
+func (c *LocalConfig) PruneBeamed(profile string, keep map[string]bool) {
+	sent := c.BeamedCommits[profile]
+	if sent == nil {
+		return
+	}
+	for sha := range sent {
+		if !keep[sha] {
+			delete(sent, sha)
+		}
+	}
+	if len(sent) == 0 {
+		delete(c.BeamedCommits, profile)
+	}
+}
+
+// MarkBeamed records each SHA as beamed to profile at time t, creating the
+// nested maps as needed. Caller is responsible for persisting via SaveLocal.
+func (c *LocalConfig) MarkBeamed(profile string, shas []string, t time.Time) {
+	if len(shas) == 0 {
+		return
+	}
+	if c.BeamedCommits == nil {
+		c.BeamedCommits = make(map[string]map[string]time.Time)
+	}
+	if c.BeamedCommits[profile] == nil {
+		c.BeamedCommits[profile] = make(map[string]time.Time)
+	}
+	for _, sha := range shas {
+		c.BeamedCommits[profile][sha] = t
+	}
 }
 
 func (g *GlobalConfig) SetProfile(name string, p Profile) {

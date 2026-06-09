@@ -23,6 +23,7 @@ outside this file.
 | Dim / secondary text  | `lipgloss.Color("241")`   | Grey                  |
 | Tracked file text     | `lipgloss.Color("241")`   | Grey (same as dim)    |
 | Delete / warning      | `lipgloss.Color("203")`   | Red-orange            |
+| Sent / beamed badge   | `lipgloss.Color("82")`    | Green (same as check) |
 
 ### Beam commit palette
 
@@ -84,6 +85,7 @@ elsewhere.
 | `iconCommit`  | `󰜘 ` | Commit entry in commit picker |
 | `iconDelete`  | `󰮈 ` | File flagged for deletion in beam |
 | `iconCube`    | `󰆧 ` | Per-commit color marker in beam file picker |
+| `iconSent`    | `󰗠 ` | Commit already beamed to the active profile (commit picker) |
 
 ## Component Patterns
 

@@ -272,8 +272,8 @@ func fileTypeIcon(path string) string {
 }
 
 // RunSyncProgress runs the progress TUI, uploading each file via the upload
-// callback. Returns the number of failed uploads.
-func RunSyncProgress(header string, files []string, upload func(string) error) (int, error) {
+// callback. Returns the paths whose upload failed (empty when all succeeded).
+func RunSyncProgress(header string, files []string, upload func(string) error) ([]string, error) {
 	model := NewSyncProgress(header, len(files))
 	p := tea.NewProgram(model)
 
@@ -285,14 +285,14 @@ func RunSyncProgress(header string, files []string, upload func(string) error) (
 
 	m, err := p.Run()
 	if err != nil {
-		return 0, fmt.Errorf("sync progress: %w", err)
+		return nil, fmt.Errorf("sync progress: %w", err)
 	}
 
 	final := m.(SyncProgress)
-	failed := 0
+	var failed []string
 	for _, f := range final.done {
 		if f.Err != nil {
-			failed++
+			failed = append(failed, f.Path)
 		}
 	}
 	return failed, nil

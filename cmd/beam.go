@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
@@ -39,7 +40,7 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load local config: %w", err)
 	}
 
-	profile, _, err := resolveProfile(args)
+	profile, profileName, err := resolveProfile(args)
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,15 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	selectedCommits, err := tui.RunCommitPicker(commits)
+	// Prune the recorded beamed-set for this profile to the commits still ahead
+	// (rebased/pushed SHAs fall off), then pre-select the unsent ones.
+	ahead := make(map[string]bool, len(commits))
+	for _, c := range commits {
+		ahead[c.SHA] = true
+	}
+	localCfg.PruneBeamed(profileName, ahead)
+
+	selectedCommits, err := tui.RunCommitPicker(commits, localCfg.SentSet(profileName))
 	if err != nil {
 		return err
 	}
@@ -138,7 +147,7 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	failures := 0
+	failedPaths := make(map[string]bool)
 
 	if len(toUpload) > 0 {
 		byPath := make(map[string]git.FileChange, len(toUpload))
@@ -160,21 +169,28 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		failures += failed
+		for _, p := range failed {
+			failedPaths[p] = true
+		}
 	}
 
 	for _, c := range toDelete {
 		remote := filepath.Join(profile.Path, c.Path)
 		if err := client.Remove(remote); err != nil {
 			log.Error("remove failed", "path", remote, "err", err)
-			failures++
+			failedPaths[c.Path] = true
 		} else {
 			log.Info("removed", "path", remote)
 		}
 	}
 
-	if failures > 0 {
-		return fmt.Errorf("%d operation(s) failed", failures)
+	// Record commits as sent: a commit counts only if it had at least one file
+	// in this beam and none of its files failed. Persist even on partial
+	// failure so fully-successful commits are not re-sent next time.
+	rememberBeamedCommits(localCfg, profileName, changes, failedPaths)
+
+	if len(failedPaths) > 0 {
+		return fmt.Errorf("%d operation(s) failed", len(failedPaths))
 	}
 
 	if beamThenSync {
@@ -216,10 +232,39 @@ func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntrac
 	if err != nil {
 		return err
 	}
-	if failed > 0 {
-		return fmt.Errorf("%d file(s) failed to upload in sync stage", failed)
+	if len(failed) > 0 {
+		return fmt.Errorf("%d file(s) failed to upload in sync stage", len(failed))
 	}
 	return nil
+}
+
+// rememberBeamedCommits records which commits were fully sent (every file
+// succeeded) and persists the local config. A commit with no files in this
+// beam, or with any failed file, is skipped. Failures are warn-logged.
+func rememberBeamedCommits(cfg *config.LocalConfig, profileName string, changes []git.FileChange, failedPaths map[string]bool) {
+	hasFile := make(map[string]bool)
+	anyFail := make(map[string]bool)
+	for _, c := range changes {
+		hasFile[c.SHA] = true
+		if failedPaths[c.Path] {
+			anyFail[c.SHA] = true
+		}
+	}
+
+	var sent []string
+	for sha := range hasFile {
+		if !anyFail[sha] {
+			sent = append(sent, sha)
+		}
+	}
+	if len(sent) == 0 {
+		return
+	}
+
+	cfg.MarkBeamed(profileName, sent, time.Now())
+	if err := config.SaveLocal(cfg); err != nil {
+		log.Warn("could not record beamed commits", "err", err)
+	}
 }
 
 func resolveBranch(explicit string) (string, error) {

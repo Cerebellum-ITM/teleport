@@ -10,11 +10,15 @@ import (
 	"github.com/pascualchavez/teleport/internal/git"
 )
 
-const iconCommit = "󰜘 "
+const (
+	iconCommit = "󰜘 "
+	iconSent   = "󰗠 "
+)
 
 type CommitPicker struct {
 	commits  []git.Commit
 	selected map[int]bool
+	sent     map[string]bool // commit SHA → already beamed to the active profile
 	cursor   int
 	height   int
 	done     bool
@@ -24,12 +28,22 @@ type CommitPicker struct {
 var (
 	commitShortStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	commitDateStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	sentStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
 )
 
-func NewCommitPicker(commits []git.Commit) CommitPicker {
+func NewCommitPicker(commits []git.Commit, sent map[string]bool) CommitPicker {
+	if sent == nil {
+		sent = map[string]bool{}
+	}
+	selected := make(map[int]bool, len(commits))
+	for i, c := range commits {
+		// Pre-select exactly the commits not yet beamed to this profile.
+		selected[i] = !sent[c.SHA]
+	}
 	return CommitPicker{
 		commits:  commits,
-		selected: make(map[int]bool),
+		selected: selected,
+		sent:     sent,
 		height:   24,
 	}
 }
@@ -68,6 +82,11 @@ func (m CommitPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for i := range m.commits {
 				m.selected[i] = !allOn
 			}
+		case "u":
+			// Re-select exactly the commits not yet beamed to this profile.
+			for i, c := range m.commits {
+				m.selected[i] = !m.sent[c.SHA]
+			}
 		case "enter":
 			m.done = true
 			return m, tea.Quit
@@ -103,11 +122,21 @@ func (m CommitPicker) View() tea.View {
 			mark = uncheckedStyle.Render("󰄱 ")
 		}
 
-		line := fmt.Sprintf("%s%s%s  %s  %s",
+		// Sent badge: green icon for beamed commits, blank (same width) for the
+		// rest so the columns stay aligned. The subject is dimmed when sent.
+		subject := c.Subject
+		badge := strings.Repeat(" ", len([]rune(iconSent)))
+		if m.sent[c.SHA] {
+			badge = sentStyle.Render(iconSent)
+			subject = dimStyle.Render(subject)
+		}
+
+		line := fmt.Sprintf("%s%s%s%s  %s  %s",
 			prefix,
 			mark,
+			badge,
 			commitShortStyle.Render(c.Short),
-			c.Subject,
+			subject,
 			commitDateStyle.Render(c.RelDate),
 		)
 		b.WriteString(line + "\n")
@@ -116,7 +145,7 @@ func (m CommitPicker) View() tea.View {
 		b.WriteString(h + "\n")
 	}
 
-	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  enter=confirm  ctrl+c=quit") + "\n")
+	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  u=unsent  enter=confirm  ctrl+c=quit") + "\n")
 	return tea.NewView(b.String())
 }
 
@@ -130,11 +159,11 @@ func (m CommitPicker) SelectedCommits() []git.Commit {
 	return out
 }
 
-func RunCommitPicker(commits []git.Commit) ([]git.Commit, error) {
+func RunCommitPicker(commits []git.Commit, sent map[string]bool) ([]git.Commit, error) {
 	if len(commits) == 0 {
 		return nil, nil
 	}
-	p := tea.NewProgram(NewCommitPicker(commits))
+	p := tea.NewProgram(NewCommitPicker(commits, sent))
 	m, err := p.Run()
 	if err != nil {
 		return nil, fmt.Errorf("commit picker: %w", err)

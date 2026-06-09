@@ -90,8 +90,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if failed > 0 {
-		return fmt.Errorf("%d file(s) failed to upload", failed)
+	if len(failed) > 0 {
+		return fmt.Errorf("%d file(s) failed to upload", len(failed))
 	}
 	if skippedUntracked > 0 {
 		log.Warn(
