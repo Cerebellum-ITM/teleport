@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -10,9 +11,26 @@ import (
 	"github.com/pascualchavez/teleport/internal/git"
 )
 
-const iconDelete = "󰮈 "
+const (
+	iconDelete = "󰮈 "
+	iconCube   = "󰆧 "
+)
 
 var deleteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+
+// beamCommitPalette assigns a distinct accent color to each contributing
+// commit so files can be grouped visually by origin. It cycles when there are
+// more commits than colors. Documented in context/ui-context.md.
+var beamCommitPalette = []lipgloss.Style{
+	lipgloss.NewStyle().Foreground(lipgloss.Color("39")),  // blue
+	lipgloss.NewStyle().Foreground(lipgloss.Color("170")), // magenta
+	lipgloss.NewStyle().Foreground(lipgloss.Color("220")), // gold
+	lipgloss.NewStyle().Foreground(lipgloss.Color("141")), // purple
+	lipgloss.NewStyle().Foreground(lipgloss.Color("80")),  // cyan
+	lipgloss.NewStyle().Foreground(lipgloss.Color("209")), // salmon
+	lipgloss.NewStyle().Foreground(lipgloss.Color("43")),  // teal
+	lipgloss.NewStyle().Foreground(lipgloss.Color("147")), // periwinkle
+}
 
 type BeamFilePicker struct {
 	changes  []git.FileChange
@@ -21,14 +39,54 @@ type BeamFilePicker struct {
 	height   int
 	done     bool
 	quitting bool
+
+	legend   []git.Commit              // contributing commits, in display order
+	shaStyle map[string]lipgloss.Style // commit SHA → accent style
 }
 
-func NewBeamFilePicker(changes []git.FileChange) BeamFilePicker {
-	selected := make(map[int]bool, len(changes))
-	for i := range changes {
+func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit) BeamFilePicker {
+	// Each file's SHA is the commit whose blob will be uploaded. Walk the
+	// selected commits in display order and assign a palette color to every
+	// commit that actually contributes a file (so the legend stays honest).
+	present := make(map[string]bool, len(changes))
+	for _, c := range changes {
+		present[c.SHA] = true
+	}
+
+	shaStyle := make(map[string]lipgloss.Style, len(commits))
+	order := make(map[string]int, len(commits))
+	var legend []git.Commit
+	for _, cm := range commits {
+		if !present[cm.SHA] {
+			continue
+		}
+		shaStyle[cm.SHA] = beamCommitPalette[len(legend)%len(beamCommitPalette)]
+		order[cm.SHA] = len(legend)
+		legend = append(legend, cm)
+	}
+
+	// Group files by commit (commit order), alphabetical within each group, so
+	// each block of color reads as one commit.
+	sorted := make([]git.FileChange, len(changes))
+	copy(sorted, changes)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if oi, oj := order[sorted[i].SHA], order[sorted[j].SHA]; oi != oj {
+			return oi < oj
+		}
+		return sorted[i].Path < sorted[j].Path
+	})
+
+	selected := make(map[int]bool, len(sorted))
+	for i := range sorted {
 		selected[i] = true
 	}
-	return BeamFilePicker{changes: changes, selected: selected, height: 24}
+	return BeamFilePicker{
+		changes:  sorted,
+		selected: selected,
+		height:   24,
+		legend:   legend,
+		shaStyle: shaStyle,
+	}
 }
 
 func (m BeamFilePicker) Init() tea.Cmd { return nil }
@@ -81,8 +139,23 @@ func (m BeamFilePicker) View() tea.View {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("  Files from selected commits") + "\n\n")
 
-	// chrome: header(1) + blank(1) + blank(1) + footer(1) = 4 lines.
-	win := computeWindow(len(m.changes), m.cursor, m.height-4)
+	// Legend: one line per contributing commit — colored cube + short SHA +
+	// subject — so each color is tied to a recognizable commit.
+	for _, cm := range m.legend {
+		style := m.shaStyle[cm.SHA]
+		b.WriteString("  " + style.Render(iconCube+cm.Short) + "  " + cm.Subject + "\n")
+	}
+	if len(m.legend) > 0 {
+		b.WriteString("\n")
+	}
+
+	// chrome: header(1) + blank(1) + footer-block(2) = 4 lines, plus the
+	// legend block (one line per commit + a trailing blank) when present.
+	chrome := 4
+	if len(m.legend) > 0 {
+		chrome += len(m.legend) + 1
+	}
+	win := computeWindow(len(m.changes), m.cursor, m.height-chrome)
 	if h := scrollUpHint(win.above); h != "" {
 		b.WriteString(h + "\n")
 	}
@@ -100,15 +173,12 @@ func (m BeamFilePicker) View() tea.View {
 			mark = uncheckedStyle.Render("󰄱 ")
 		}
 
-		var label string
-		switch c.Status {
-		case 'D':
-			label = deleteStyle.Render(iconDelete + c.Path + "  (delete)")
-		default:
-			label = iconFile + c.Path
+		cstyle := m.shaStyle[c.SHA]
+		line := prefix + mark + cstyle.Render(iconCube+c.Path)
+		if c.Status == 'D' {
+			line += deleteStyle.Render("  (delete)")
 		}
-
-		b.WriteString(prefix + mark + label + "\n")
+		b.WriteString(line + "\n")
 	}
 	if h := scrollDownHint(win.below); h != "" {
 		b.WriteString(h + "\n")
@@ -128,11 +198,11 @@ func (m BeamFilePicker) SelectedChanges() []git.FileChange {
 	return out
 }
 
-func RunBeamFilePicker(changes []git.FileChange) ([]git.FileChange, error) {
+func RunBeamFilePicker(changes []git.FileChange, commits []git.Commit) ([]git.FileChange, error) {
 	if len(changes) == 0 {
 		return nil, nil
 	}
-	p := tea.NewProgram(NewBeamFilePicker(changes))
+	p := tea.NewProgram(NewBeamFilePicker(changes, commits))
 	m, err := p.Run()
 	if err != nil {
 		return nil, fmt.Errorf("beam file picker: %w", err)

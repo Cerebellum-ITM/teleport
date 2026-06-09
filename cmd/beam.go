@@ -111,7 +111,7 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	changes, err := tui.RunBeamFilePicker(allChanges)
+	changes, err := tui.RunBeamFilePicker(allChanges, selectedCommits)
 	if err != nil {
 		return err
 	}

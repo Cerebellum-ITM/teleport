@@ -24,6 +24,25 @@ outside this file.
 | Tracked file text     | `lipgloss.Color("241")`   | Grey (same as dim)    |
 | Delete / warning      | `lipgloss.Color("203")`   | Red-orange            |
 
+### Beam commit palette
+
+The beam file picker groups files by the commit they originate from and
+tints each group with a distinct accent so the list reads at a glance. These
+are the only colors that may cycle/repeat; they are assigned to commits in
+display order and reused (mod length) when there are more commits than colors.
+Defined as `beamCommitPalette` in `internal/tui/beamfilepicker.go`.
+
+| Index | lipgloss token            | Color      |
+| ----- | ------------------------- | ---------- |
+| 0     | `lipgloss.Color("39")`    | Blue       |
+| 1     | `lipgloss.Color("170")`   | Magenta    |
+| 2     | `lipgloss.Color("220")`   | Gold       |
+| 3     | `lipgloss.Color("141")`   | Purple     |
+| 4     | `lipgloss.Color("80")`    | Cyan       |
+| 5     | `lipgloss.Color("209")`   | Salmon     |
+| 6     | `lipgloss.Color("43")`    | Teal       |
+| 7     | `lipgloss.Color("147")`   | Periwinkle |
+
 ## Typography
 
 Terminal output only — font is controlled by the user's terminal emulator.
@@ -54,6 +73,7 @@ elsewhere.
 | `iconSyncFail`| `✗`  | File upload failed            |
 | `iconCommit`  | `󰜘 ` | Commit entry in commit picker |
 | `iconDelete`  | `󰮈 ` | File flagged for deletion in beam |
+| `iconCube`    | `󰆧 ` | Per-commit color marker in beam file picker |
 
 ## Component Patterns
 
