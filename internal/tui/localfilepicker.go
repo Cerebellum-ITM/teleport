@@ -21,6 +21,7 @@ type LocalFilePicker struct {
 	entries  []localEntry
 	filter   textinput.Model
 	cursor   int
+	height   int
 	chosen   string
 	quitting bool
 	err      error
@@ -35,6 +36,7 @@ func NewLocalFilePicker(startPath, header string) LocalFilePicker {
 		cwd:    startPath,
 		header: header,
 		filter: fi,
+		height: 24,
 	}
 	m.entries = m.readEntries(startPath)
 	return m
@@ -72,6 +74,9 @@ func (m LocalFilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	visible := m.filteredEntries()
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -165,7 +170,13 @@ func (m LocalFilePicker) View() tea.View {
 		}
 	}
 
-	for i, e := range visible {
+	// chrome: header(1) + cwd(1) + filter(1) + blank(1) + blank(1) + footer(1) = 6 lines.
+	win := computeWindow(len(visible), m.cursor, m.height-6)
+	if h := scrollUpHint(win.above); h != "" {
+		b.WriteString(h + "\n")
+	}
+	for i := win.start; i < win.end; i++ {
+		e := visible[i]
 		icon := "  "
 		if e.isDir {
 			icon = iconFolder
@@ -178,6 +189,9 @@ func (m LocalFilePicker) View() tea.View {
 		} else {
 			b.WriteString("    " + dimStyle.Render(label) + "\n")
 		}
+	}
+	if h := scrollDownHint(win.below); h != "" {
+		b.WriteString(h + "\n")
 	}
 
 	b.WriteString("\n")

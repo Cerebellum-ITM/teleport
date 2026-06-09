@@ -16,6 +16,7 @@ type CommitPicker struct {
 	commits  []git.Commit
 	selected map[int]bool
 	cursor   int
+	height   int
 	done     bool
 	quitting bool
 }
@@ -29,6 +30,7 @@ func NewCommitPicker(commits []git.Commit) CommitPicker {
 	return CommitPicker{
 		commits:  commits,
 		selected: make(map[int]bool),
+		height:   24,
 	}
 }
 
@@ -36,6 +38,8 @@ func (m CommitPicker) Init() tea.Cmd { return nil }
 
 func (m CommitPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -80,7 +84,13 @@ func (m CommitPicker) View() tea.View {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("  Local commits ahead of upstream") + "\n\n")
 
-	for i, c := range m.commits {
+	// chrome: header(1) + blank(1) + blank(1) + footer(1) = 4 lines.
+	win := computeWindow(len(m.commits), m.cursor, m.height-4)
+	if h := scrollUpHint(win.above); h != "" {
+		b.WriteString(h + "\n")
+	}
+	for i := win.start; i < win.end; i++ {
+		c := m.commits[i]
 		prefix := "    "
 		if i == m.cursor {
 			prefix = "  ▶ "
@@ -101,6 +111,9 @@ func (m CommitPicker) View() tea.View {
 			commitDateStyle.Render(c.RelDate),
 		)
 		b.WriteString(line + "\n")
+	}
+	if h := scrollDownHint(win.below); h != "" {
+		b.WriteString(h + "\n")
 	}
 
 	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  enter=confirm  ctrl+c=quit") + "\n")

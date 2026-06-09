@@ -40,6 +40,7 @@ type DirPicker struct {
 	dirs     []string
 	filter   textinput.Model
 	cursor   int
+	height   int
 	chosen   string
 	quitting bool
 	loading  bool
@@ -68,6 +69,7 @@ func NewDirPickerWith(client *sshpkg.Client, startPath, header string) DirPicker
 		header:  header,
 		loading: true,
 		filter:  fi,
+		height:  24,
 	}
 }
 
@@ -92,6 +94,10 @@ func (m DirPicker) filteredDirs() []string {
 
 func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
+		return m, nil
+
 	case listDirsMsg:
 		m.loading = false
 		m.dirs = msg.dirs
@@ -216,12 +222,22 @@ func (m DirPicker) View() tea.View {
 		}
 	}
 
-	for i, d := range visible {
+	// chrome: header(1) + cwd(1) + filter(1) + blank(1) + footer(1) + selected(1) = 6
+	// lines, plus the blank line before the footer = 7.
+	win := computeWindow(len(visible), m.cursor, m.height-7)
+	if h := scrollUpHint(win.above); h != "" {
+		b.WriteString(h + "\n")
+	}
+	for i := win.start; i < win.end; i++ {
+		d := visible[i]
 		if i == m.cursor {
 			b.WriteString(cursorStyle.Render("  ▶ "+iconFolder+d) + "\n")
 		} else {
 			b.WriteString("    " + dimStyle.Render(iconFolder+d) + "\n")
 		}
+	}
+	if h := scrollDownHint(win.below); h != "" {
+		b.WriteString(h + "\n")
 	}
 
 	b.WriteString("\n")

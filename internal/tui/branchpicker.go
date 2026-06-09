@@ -20,6 +20,7 @@ type branchPickerModel struct {
 	current  string
 	filter   textinput.Model
 	cursor   int
+	height   int
 	chosen   string
 	quitting bool
 }
@@ -33,6 +34,7 @@ func RunBranchPicker(branches []string, current string) (string, error) {
 		branches: branches,
 		current:  current,
 		filter:   fi,
+		height:   24,
 	}
 
 	p := tea.NewProgram(m)
@@ -66,6 +68,9 @@ func (m branchPickerModel) filtered() []string {
 
 func (m branchPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyPressMsg:
 		visible := m.filtered()
 		switch msg.String() {
@@ -124,7 +129,13 @@ func (m branchPickerModel) View() tea.View {
 		b.WriteString(dimStyle.Render("  (no matches)") + "\n")
 	}
 
-	for i, branch := range visible {
+	// chrome: header(1) + filter(1) + blank(1) + blank(1) + footer(1) = 5 lines.
+	win := computeWindow(len(visible), m.cursor, m.height-5)
+	if h := scrollUpHint(win.above); h != "" {
+		b.WriteString(h + "\n")
+	}
+	for i := win.start; i < win.end; i++ {
+		branch := visible[i]
 		prefix := "    "
 		if i == m.cursor {
 			prefix = "  ▶ "
@@ -136,6 +147,9 @@ func (m branchPickerModel) View() tea.View {
 		}
 
 		b.WriteString(line + "\n")
+	}
+	if h := scrollDownHint(win.below); h != "" {
+		b.WriteString(h + "\n")
 	}
 
 	b.WriteString("\n" + dimStyle.Render("  type=filter  ↑↓=navigate  enter=confirm  esc=clear  ctrl+c=quit") + "\n")

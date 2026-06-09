@@ -18,6 +18,7 @@ type BeamFilePicker struct {
 	changes  []git.FileChange
 	selected map[int]bool
 	cursor   int
+	height   int
 	done     bool
 	quitting bool
 }
@@ -27,13 +28,15 @@ func NewBeamFilePicker(changes []git.FileChange) BeamFilePicker {
 	for i := range changes {
 		selected[i] = true
 	}
-	return BeamFilePicker{changes: changes, selected: selected}
+	return BeamFilePicker{changes: changes, selected: selected, height: 24}
 }
 
 func (m BeamFilePicker) Init() tea.Cmd { return nil }
 
 func (m BeamFilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -78,7 +81,13 @@ func (m BeamFilePicker) View() tea.View {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("  Files from selected commits") + "\n\n")
 
-	for i, c := range m.changes {
+	// chrome: header(1) + blank(1) + blank(1) + footer(1) = 4 lines.
+	win := computeWindow(len(m.changes), m.cursor, m.height-4)
+	if h := scrollUpHint(win.above); h != "" {
+		b.WriteString(h + "\n")
+	}
+	for i := win.start; i < win.end; i++ {
+		c := m.changes[i]
 		prefix := "    "
 		if i == m.cursor {
 			prefix = "  ▶ "
@@ -100,6 +109,9 @@ func (m BeamFilePicker) View() tea.View {
 		}
 
 		b.WriteString(prefix + mark + label + "\n")
+	}
+	if h := scrollDownHint(win.below); h != "" {
+		b.WriteString(h + "\n")
 	}
 
 	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  enter=confirm  ctrl+c=quit") + "\n")

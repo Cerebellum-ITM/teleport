@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- Interactive list pickers no longer break the terminal layout when the list is longer than the visible screen. Previously every picker rendered all items at once, so long lists (e.g. many commits in `teleport beam`) overflowed the terminal height and scrolled the header/footer off-screen. All cursor-driven pickers (commit picker, beam file picker, branch picker, local file picker, remote dir picker) and the sync file picker now render a sliding window sized to the terminal height, keeping the cursor in view and showing `↑ N more` / `↓ N more` indicators for the hidden items. The sync file picker splits the available height between its tracked and untracked sections, favoring the interactive list. Implemented via a shared `computeWindow` helper in `internal/tui/listwindow.go`; each picker model now tracks terminal height via `tea.WindowSizeMsg`.
+
 ## [0.2.0] - 2026-06-02
 
 ### Added
