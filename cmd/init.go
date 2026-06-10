@@ -35,14 +35,18 @@ func init() {
 	initCmd.Flags().StringVarP(&initProfileFlag, "profile", "p", "", "sync profile name (default: current dir name)")
 }
 
-// multiSelectKeyMap returns a huh KeyMap where Tab is removed from the
-// MultiSelect Next binding so Tab never accidentally submits the form.
-// Space (and x) remain the toggle keys.
+// multiSelectKeyMap returns a huh KeyMap where Tab toggles the selection
+// (app-wide convention) instead of advancing the form: Tab is removed from the
+// MultiSelect Next binding and added to Toggle. Space and x stay as aliases.
 func multiSelectKeyMap() *huh.KeyMap {
 	km := huh.NewDefaultKeyMap()
 	km.MultiSelect.Next = key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "confirm"),
+	)
+	km.MultiSelect.Toggle = key.NewBinding(
+		key.WithKeys("tab", "space", "x"),
+		key.WithHelp("tab", "toggle"),
 	)
 	return km
 }

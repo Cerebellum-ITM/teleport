@@ -63,7 +63,7 @@ func (m FilePicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 
-		case " ":
+		case "tab", " ":
 			if len(m.untracked) > 0 {
 				m.selected[m.cursor] = !m.selected[m.cursor]
 			}
@@ -100,7 +100,7 @@ func (m FilePicker) View() tea.View {
 	}
 
 	if len(m.untracked) > 0 {
-		b.WriteString("\n" + dimStyle.Render("  Untracked (space to toggle):") + "\n")
+		b.WriteString("\n" + dimStyle.Render("  Untracked (tab to toggle):") + "\n")
 		uwin := computeWindow(len(m.untracked), m.cursor, untrackedRows)
 		if h := scrollUpHint(uwin.above); h != "" {
 			b.WriteString(h + "\n")
@@ -123,7 +123,7 @@ func (m FilePicker) View() tea.View {
 		}
 	}
 
-	b.WriteString("\n" + dimStyle.Render("  space=toggle  enter=confirm  ctrl+c=quit") + "\n")
+	b.WriteString("\n" + dimStyle.Render("  tab=toggle  enter=confirm  ctrl+c=quit") + "\n")
 	return tea.NewView(b.String())
 }
 

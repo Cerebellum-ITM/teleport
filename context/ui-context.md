@@ -87,6 +87,20 @@ elsewhere.
 | `iconCube`    | `󰆧 ` | Per-commit color marker in beam file picker |
 | `iconSent`    | `󰗠 ` | Commit already beamed to the active profile (commit picker) |
 
+## Keybinding Conventions
+
+App-wide rules every TUI must follow:
+
+- **`tab` toggles selection** (select/deselect an item) in every multi-select
+  picker. `space` may be kept as a secondary alias, but `tab` is the canonical
+  key and the one shown in footers/help text. Applies to the commit picker,
+  beam file picker, sync file picker, and the `huh` multi-select in
+  `teleport init` (its `MultiSelect.Toggle` binding).
+- **`enter` confirms**, **`ctrl+c` cancels** (and `q` quits in browsers).
+- In single-select file/directory browsers there is nothing to toggle, so
+  `tab` (and `→/l`) descends into a directory; selection is `enter`. This is
+  the one place `tab` does not mean "toggle".
+
 ## Component Patterns
 
 ### Host Picker
@@ -100,7 +114,7 @@ elsewhere.
 - Footer always shows keybindings and current selected path.
 
 ### File Picker
-- Custom bubbletea model. Tracked files shown in dim (non-interactive). Untracked files toggleable with `space`.
+- Custom bubbletea model. Tracked files shown in dim (non-interactive). Untracked files toggleable with `tab` (`space` alias).
 - Checked files use green check icon; unchecked use orange box icon.
 - `enter` confirms; `ctrl+c` cancels.
 

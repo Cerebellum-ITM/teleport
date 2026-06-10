@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Selecting/deselecting items is now `tab` everywhere, consistently. The sync file picker (which only accepted `space`) and the `teleport init` profile multi-select now toggle with `tab`; `space` still works as an alias. The commit picker and beam file picker already used `tab`. File/directory browsers are unaffected — there `tab` descends into a directory (there is nothing to toggle).
+
 ### Added
 - `teleport beam` now remembers which commits were already beamed to each profile and shows it in the commit picker. Already-sent commits get a green sent badge (`󰗠`) and a dimmed subject; the picker opens with only the not-yet-sent commits pre-selected, and a new `u` key re-selects exactly the unsent set (`a` still toggles all). "Sent" is tracked per destination profile (a commit beamed to `production` is still unsent for `staging`) and persisted in the per-project local config (`[beamed_commits.<profile>]`). A commit is recorded as sent only when every path it touched was uploaded/deleted without error — attribution is by path, not by the winning blob, so a commit whose file was superseded by a newer commit is still credited (and partial failures reappear next run). SHAs that are no longer ahead of the remote (pushed, merged, or rebased) are pruned automatically.
 
