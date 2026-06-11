@@ -170,23 +170,33 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	// Per-commit colors, computed from the full change set the picker used so
 	// the send view matches the file picker exactly.
 	styles := tui.BeamFileStyles(allChanges, selectedCommits)
-	shortBySHA := make(map[string]string, len(selectedCommits))
-	for _, c := range selectedCommits {
-		shortBySHA[c.SHA] = c.Short
-	}
 
 	if len(toUpload) > 0 {
 		byPath := make(map[string]git.FileChange, len(toUpload))
-		paths := make([]string, len(toUpload))
-		markers := make(map[string]tui.BeamMarker, len(toUpload))
-		for i, c := range toUpload {
+		for _, c := range toUpload {
 			byPath[c.Path] = c
-			paths[i] = c.Path
-			markers[c.Path] = tui.BeamMarker{Style: styles[c.SHA], Short: shortBySHA[c.SHA]}
 		}
 
-		header := fmt.Sprintf("Beaming %d file(s) to %s:%s", len(paths), profile.Host, profile.Path)
-		failed, err := tui.RunSyncProgressMarked(header, paths, markers, func(path string) error {
+		// Group upload paths under their commit, preserving the selected-commit
+		// order so the send view reads top-to-bottom like the file picker.
+		pathsBySHA := make(map[string][]string, len(selectedCommits))
+		for _, c := range toUpload {
+			pathsBySHA[c.SHA] = append(pathsBySHA[c.SHA], c.Path)
+		}
+		var groups []tui.BeamGroup
+		for _, c := range selectedCommits {
+			if ps := pathsBySHA[c.SHA]; len(ps) > 0 {
+				groups = append(groups, tui.BeamGroup{
+					Style:   styles[c.SHA],
+					Short:   c.Short,
+					Subject: c.Subject,
+					Paths:   ps,
+				})
+			}
+		}
+
+		header := fmt.Sprintf("Beaming %d file(s) to %s:%s", len(toUpload), profile.Host, profile.Path)
+		failed, err := tui.RunBeamSendProgress(header, groups, func(path string) error {
 			fc := byPath[path]
 			content, err := git.FileAtCommit(fc.SHA, fc.Path)
 			if err != nil {

@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `teleport beam` gained an `--auto`/`-a` flag that skips the commit picker entirely: it auto-selects exactly the commits not yet beamed to the active profile (the same set the picker pre-selects) and goes straight to the file review. When every local commit ahead of the remote was already sent, it prints `Nothing to beam — all local commits on <branch> already sent.` and exits.
 - New root-level shortcut `teleport -b`/`--beam` runs the beam flow without typing the `beam` subcommand, matching the existing `-s`/`-i`/`-p` shortcuts. It combines with the auto shortcut as `teleport -ba` (a root-level `-a`/`--auto` flag bound to the same behavior). The full `teleport beam` subcommand remains the only way to pass beam's own sub-flags (`--branch`, `--clean`, `--then-sync`, `--yes`).
 
+### Changed
+- The beam send/progress view is now grouped by commit instead of a flat file list. Each commit gets a colored header (`󰆧 [shortSHA] ─ subject`) using the same per-commit accent as the file picker, with its files listed underneath marked `✓` uploaded / `✗` failed / `·` pending. This replaces the previous layout that repeated the colored cube and `[shortSHA]` on every file line, so the short SHA and subject now appear once per commit. The visible window follows the most recently completed file so progress stays on screen. Plain `teleport sync` keeps its flat streaming log. Internally, `BeamMarker`/`RunSyncProgressMarked` were replaced by `BeamGroup`/`RunBeamSendProgress` in `internal/tui/syncprogress.go`.
+
 ## [0.3.0] - 2026-06-09
 
 ### Changed
