@@ -18,6 +18,7 @@ var (
 	beamThenSync bool
 	beamClean    bool
 	beamYes      bool
+	beamAuto     bool
 )
 
 var beamCmd = &cobra.Command{
@@ -32,6 +33,7 @@ func init() {
 	beamCmd.Flags().BoolVarP(&beamThenSync, "then-sync", "s", false, "run sync after beam (working-tree changes over the just-beamed snapshot)")
 	beamCmd.Flags().BoolVarP(&beamClean, "clean", "c", false, "run clean before beam (discard dirty changes on the remote)")
 	beamCmd.Flags().BoolVarP(&beamYes, "yes", "y", false, "skip the clean confirmation prompt")
+	beamCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "skip the commit picker; auto-select commits not yet sent and go straight to file review")
 }
 
 func runBeam(cmd *cobra.Command, args []string) error {
@@ -95,13 +97,29 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	}
 	localCfg.PruneBeamed(profileName, ahead)
 
-	selectedCommits, err := tui.RunCommitPicker(commits, localCfg.SentSet(profileName))
-	if err != nil {
-		return err
-	}
-	if len(selectedCommits) == 0 {
-		fmt.Println("No commits selected.")
-		return nil
+	var selectedCommits []git.Commit
+	if beamAuto {
+		// Skip the picker: auto-select exactly the commits not yet beamed to
+		// this profile (the picker's default pre-selection).
+		sent := localCfg.SentSet(profileName)
+		for _, c := range commits {
+			if !sent[c.SHA] {
+				selectedCommits = append(selectedCommits, c)
+			}
+		}
+		if len(selectedCommits) == 0 {
+			fmt.Printf("Nothing to beam — all local commits on %s already sent.\n", branch)
+			return nil
+		}
+	} else {
+		selectedCommits, err = tui.RunCommitPicker(commits, localCfg.SentSet(profileName))
+		if err != nil {
+			return err
+		}
+		if len(selectedCommits) == 0 {
+			fmt.Println("No commits selected.")
+			return nil
+		}
 	}
 
 	// CommitsAhead returns newest first; FilesInCommits needs oldest first

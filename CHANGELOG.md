@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- `teleport beam` gained an `--auto`/`-a` flag that skips the commit picker entirely: it auto-selects exactly the commits not yet beamed to the active profile (the same set the picker pre-selects) and goes straight to the file review. When every local commit ahead of the remote was already sent, it prints `Nothing to beam — all local commits on <branch> already sent.` and exits.
+- New root-level shortcut `teleport -b`/`--beam` runs the beam flow without typing the `beam` subcommand, matching the existing `-s`/`-i`/`-p` shortcuts. It combines with the auto shortcut as `teleport -ba` (a root-level `-a`/`--auto` flag bound to the same behavior). The full `teleport beam` subcommand remains the only way to pass beam's own sub-flags (`--branch`, `--clean`, `--then-sync`, `--yes`).
+
 ## [0.3.0] - 2026-06-09
 
 ### Changed

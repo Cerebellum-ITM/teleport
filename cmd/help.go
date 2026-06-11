@@ -175,6 +175,7 @@ func printHelp() {
 			{"-u", "--untracked", iconUntrack, "also sync untracked files (use with -s)"},
 			{"-i", "--init", iconGear, "configure a sync profile"},
 			{"-p", "--profiles", iconPerson, "list configured profiles"},
+			{"-b", "--beam", iconSync, "send selected local commits to the remote"},
 			{"-v", "--verbose", ' ', "verbose output"},
 		},
 		Examples: [][]string{
@@ -182,8 +183,10 @@ func printHelp() {
 			{"teleport -su", "sync modified + untracked files"},
 			{"teleport -i", "run interactive profile setup"},
 			{"teleport -p", "list all profiles"},
+			{"teleport -b", "pick local commits to send"},
 			{"teleport sync staging", "sync using a specific profile"},
 			{"teleport beam", "pick local commits to send"},
+			{"teleport beam -a", "auto-select unsent commits, skip the commit picker"},
 			{"teleport beam -cs", "clean remote → beam commits → sync working tree"},
 			{"teleport clean", "discard dirty changes on the remote"},
 			{"teleport status -p", "verify pending work matches the remote"},

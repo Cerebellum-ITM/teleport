@@ -11,6 +11,7 @@ var verbose bool
 var rootSync bool
 var rootInit bool
 var rootProfiles bool
+var rootBeam bool
 
 var rootCmd = &cobra.Command{
 	Use:   "teleport",
@@ -31,6 +32,8 @@ history clean of post-deploy fix commits.`,
 			return runInit(cmd, args)
 		case rootProfiles:
 			return runProfiles(cmd, args)
+		case rootBeam:
+			return runBeam(cmd, args)
 		default:
 			printHelp()
 			return nil
@@ -57,6 +60,8 @@ func init() {
 	rootCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, " include untracked files (use with -s)")
 	rootCmd.Flags().BoolVarP(&rootInit, "init", "i", false, " configure a sync profile")
 	rootCmd.Flags().BoolVarP(&rootProfiles, "profiles", "p", false, " list configured profiles")
+	rootCmd.Flags().BoolVarP(&rootBeam, "beam", "b", false, "󰜘 send selected local commits to the remote server")
+	rootCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "with -b: auto-select commits not yet sent, skip the commit picker")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(profilesCmd)
