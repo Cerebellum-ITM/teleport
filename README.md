@@ -18,19 +18,94 @@ teleport sync      # upload changed files → iterate → commit clean
    with a live progress bar. Add `-u` to include untracked files too.
 4. Iterate until satisfied, then commit cleanly.
 
+## Two ways to ship code
+
+- **`sync`** — pushes your *working-tree* changes (everything modified since
+  `HEAD`). Fast, dirty, throwaway: perfect for the edit-test-edit loop.
+- **`beam`** — pushes *selected commits*, cherry-pick style. You pick which
+  commits (and which files within them) land on the remote, and teleport
+  remembers what was already sent per profile. Use it to promote reviewed,
+  committed work to a server without pushing your whole branch.
+
 ## Commands
 
 | Command | Description |
 |---|---|
-| `teleport init` | Interactive profile setup (host picker → remote dir browser) |
-| `teleport sync` | Upload changed tracked files to the default profile |
-| `teleport sync <profile>` | Override the default profile |
-| `teleport sync -u` | Also include untracked files |
-| `teleport profiles` | List all configured profiles (`*` marks the local default) |
+| `teleport init` | Interactive profile setup (host picker → remote dir browser). `-p <name>` presets the profile name |
+| `teleport sync [profile]` | Upload changed tracked files. `-u` also includes untracked files |
+| `teleport beam [profile]` | Send selected local commits to the remote (cherry-pick style) |
+| `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
+| `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
+| `teleport pull [profile]` | Download remote changes back to the local working tree |
+| `teleport ship [bin]` | Deploy a local binary to its OS-matching bin profile |
+| `teleport profiles` | List configured profiles (`*` marks the local default) |
+| `teleport profiles remove <name>` | Remove a profile from the global config |
+| `teleport config get/set/unset <key>` | Manage per-directory defaults |
 | `teleport version` | Print version, commit hash, and build date |
 
-Root shorthands: `-s` (sync), `-i` (init), `-p` (profiles), `-u` (untracked).
-`teleport -su` is equivalent to `teleport sync -u`.
+Most commands take an optional `[profile]` argument to override the local
+default for that run. `-v`/`--verbose` works on every command.
+
+### Root shorthands
+
+For the common actions you don't need to type the subcommand:
+
+| Shorthand | Equivalent |
+|---|---|
+| `teleport -s` | `teleport sync` |
+| `teleport -su` | `teleport sync -u` |
+| `teleport -i` | `teleport init` |
+| `teleport -p` | `teleport profiles` |
+| `teleport -b` | `teleport beam` |
+| `teleport -ba` | `teleport beam --auto` |
+
+The `beam` subcommand keeps its own flags (`--branch`, `--clean`,
+`--then-sync`, `--yes`) — use the full `teleport beam …` form for those.
+
+## Beam — send selected commits
+
+`teleport beam` walks you from commits → files → upload:
+
+1. **Commit picker** — lists local commits ahead of the remote. Commits already
+   beamed to this profile show a green sent badge (`󰗠`) and a dimmed subject;
+   the picker opens with only the not-yet-sent commits pre-selected. `tab`
+   toggles, `a` toggles all, `u` re-selects exactly the unsent set.
+2. **File picker** — files from the selected commits, grouped and color-coded by
+   commit (`󰆧 [shortSHA]`). Filter to one commit at a time with `←`/`→`.
+3. **Send view** — upload progress grouped by commit: each commit is a colored
+   header with its short SHA and subject, its files listed underneath marked
+   `✓` uploaded / `✗` failed / `·` pending.
+
+teleport tracks "sent" **per destination profile** (a commit beamed to
+`production` is still unsent for `staging`) and persists it in the per-project
+local config. A commit counts as sent only when every path it touched uploaded
+without error; SHAs that are no longer ahead of the remote (pushed, merged, or
+rebased) are pruned automatically.
+
+Useful flags:
+
+```sh
+teleport beam --auto        # -a: skip the commit picker, auto-select unsent commits
+teleport beam --branch dev  # -b: beam commits from a branch other than the current one
+teleport beam --clean       # -c: run clean on the remote before beaming
+teleport beam --then-sync   # -s: after beaming, sync working-tree changes on top
+teleport beam -cs           # clean remote → beam commits → sync working tree
+```
+
+## Ship — deploy a binary
+
+`teleport ship [bin]` uploads a built binary to a remote `bin/` directory in
+three steps (SFTP upload to `/tmp` → `chmod +x` → `mv` into place, with
+automatic `sudo` escalation when needed). The target OS is auto-detected from
+the binary's magic bytes (ELF → linux, Mach-O → macos, PE → windows).
+
+```sh
+teleport ship ./bin/mycli       # explicit binary
+teleport ship                   # reads bin-dir; auto-picks the only file or prompts
+teleport ship --os linux        # override OS detection
+teleport ship --to ~/.local/bin # override the remote bin dir for this run
+teleport ship --name mycli      # rename the binary on the remote
+```
 
 ## Installation
 
@@ -64,6 +139,20 @@ Password-based auth is not supported.
 - Local project default: `~/.config/teleport/projects/<sha256-of-cwd>.toml`
 
 No config files are placed inside your project directories.
+
+Per-directory defaults (managed with `teleport config`):
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `default-profile` | string | — | Profile used when none is passed |
+| `sync-untracked` | bool | `false` | Include untracked files on every sync (same as `-u`) |
+| `bin-dir` | string | `<unset>` | Local dir where built binaries live (used by `teleport ship`) |
+
+```sh
+teleport config set sync-untracked true   # remember -u for this directory
+teleport config get                        # print all local config values
+teleport config unset bin-dir              # reset a key to its default
+```
 
 ## Tech stack
 
