@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-06-17
+
+### Added
+- `teleport shell [profile]` — opens an interactive shell on the remote, already `cd`'d into the profile's remote path. It derives the host and path from the existing sync profile (no extra configuration) and runs `ssh -t <host> "cd '<path>' && exec zsh"`. The command replaces its own process with the system `ssh` binary (`syscall.Exec`), so it behaves exactly like a hand-typed `ssh` — native TTY, colors, agent, `~/.ssh/config` — and leaves no teleport process running while the session is open. The existing `sync`/`beam`/`ship`/`clean`/`pull` commands are unaffected; the new code is isolated to `cmd/shell.go` (with a `syscall.Exec` Unix path and an `exec.Command` Windows fallback).
+
 ## [0.4.0] - 2026-06-11
 
 ### Added

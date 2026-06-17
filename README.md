@@ -38,6 +38,7 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
 | `teleport ship [bin]` | Deploy a local binary to its OS-matching bin profile |
+| `teleport shell [profile]` | Open an interactive shell on the remote, already in the profile's path |
 | `teleport profiles` | List configured profiles (`*` marks the local default) |
 | `teleport profiles remove <name>` | Remove a profile from the global config |
 | `teleport config get/set/unset <key>` | Manage per-directory defaults |
@@ -107,6 +108,24 @@ teleport ship --os linux        # override OS detection
 teleport ship --to ~/.local/bin # override the remote bin dir for this run
 teleport ship --name mycli      # rename the binary on the remote
 ```
+
+## Shell — jump onto the remote
+
+`teleport shell [profile]` drops you into an interactive shell on the remote,
+already `cd`'d into the profile's remote path — handy when you need to tail logs
+or restart a service on the box you've been syncing to. No extra setup: it
+reuses the host and path from the sync profile.
+
+```sh
+teleport shell           # uses the local default profile
+teleport shell staging   # use a specific profile
+```
+
+It runs `ssh -t <host> "cd <path> && exec zsh"` and **replaces its own process**
+with the system `ssh` binary, so the session behaves and performs exactly like a
+hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and no teleport
+process lingers while you're connected. The host is resolved by `ssh` itself
+from `~/.ssh/config`.
 
 ## Installation
 
