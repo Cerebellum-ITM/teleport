@@ -89,6 +89,7 @@ teleport beam --auto        # -a: skip the commit picker, auto-select unsent com
 teleport beam --branch dev  # -b: beam commits from a branch other than the current one
 teleport beam --clean       # -c: run clean on the remote before beaming
 teleport beam --then-sync   # -s: after beaming, sync working-tree changes on top
+teleport beam --yes         # -y: skip the clean confirmation prompt (use with -c)
 teleport beam -cs           # clean remote → beam commits → sync working tree
 ```
 
@@ -112,7 +113,7 @@ teleport ship --name mycli      # rename the binary on the remote
 **Requirements:** Go 1.25+, a terminal with a [Nerd Font](https://www.nerdfonts.com/) installed.
 
 ```sh
-git clone https://github.com/pascualchavez/teleport
+git clone https://github.com/Cerebellum-ITM/teleport
 cd teleport
 make build       # builds ./bin/teleport and copies to ~/.local/bin
 ```
@@ -131,7 +132,9 @@ back to default key files (`id_ed25519`, `id_rsa`, `id_ecdsa`). When
 `IdentityFile` is set in `~/.ssh/config`, only that key is offered to avoid
 exhausting `MaxAuthTries`.
 
-Password-based auth is not supported.
+If no agent is running and no key file is found, teleport falls back to a masked
+password prompt — every command that connects to a remote will ask for the SSH
+password instead of aborting.
 
 ## Configuration
 
