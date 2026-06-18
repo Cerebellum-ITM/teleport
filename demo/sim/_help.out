@@ -1,0 +1,47 @@
+
+  [48;5;60m [m[1;38;5;255;48;5;60m teleport [m[48;5;60m [m
+
+  [38;5;252mSync git-tracked files to a remote server via SFTP,[m
+
+  [38;5;252mkeeping your git history clean of post-deploy fix commits.[m
+
+  [1;38;5;104mCommands[m
+
+    [38;5;116m[m  [1;38;5;255minit[m          [38;5;252mconfigure a sync profile (SSH host + remote directory)[m
+    [38;5;116m[m  [1;38;5;255msync[m          [38;5;252msync changed files to the remote server[m
+    [38;5;116m[m  [1;38;5;255mbeam[m          [38;5;252msend selected local commits (cherry-pick style)[m
+    [38;5;116m[m  [1;38;5;255mstatus[m        [38;5;252mcompare local files against the remote (SHA256)[m
+    [38;5;116m[m  [1;38;5;255mclean[m         [38;5;252mdiscard dirty changes on the remote (git checkout + git clean)[m
+    [38;5;116m[m  [1;38;5;255mpull[m          [38;5;252mdownload remote changes to local working tree[m
+    [38;5;116m[m  [1;38;5;255mship[m          [38;5;252mdeploy a local binary to its OS-matching bin profile[m
+    [38;5;116m[m  [1;38;5;255mshell[m         [38;5;252mopen an interactive shell on the remote at the profile's path[m
+    [38;5;116m[m  [1;38;5;255mprofiles[m      [38;5;252mlist configured sync profiles[m
+    [38;5;116m[m  [1;38;5;255mconfig[m        [38;5;252mget/set per-directory defaults (e.g. sync-untracked)[m
+    [38;5;116m[m  [1;38;5;255mversion[m       [38;5;252mprint version information[m
+
+  [1;38;5;104mFlags & shortcuts[m
+
+    [38;5;116m[m  [38;5;150m-s[m      [38;5;248m--sync[m          [38;5;252msync changed files[m
+    [38;5;116m[m  [38;5;150m-u[m      [38;5;248m--untracked[m     [38;5;252malso sync untracked files (use with -s)[m
+    [38;5;116m[m  [38;5;150m-i[m      [38;5;248m--init[m          [38;5;252mconfigure a sync profile[m
+    [38;5;116m[m  [38;5;150m-p[m      [38;5;248m--profiles[m      [38;5;252mlist configured profiles[m
+    [38;5;116m[m  [38;5;150m-b[m      [38;5;248m--beam[m          [38;5;252msend selected local commits to the remote[m
+        [38;5;150m-v[m      [38;5;248m--verbose[m       [38;5;252mverbose output[m
+
+  [1;38;5;104mExamples[m
+
+    [38;5;222mteleport -s                 [m  [38;5;252msync only modified files[m
+    [38;5;222mteleport -su                [m  [38;5;252msync modified + untracked files[m
+    [38;5;222mteleport -i                 [m  [38;5;252mrun interactive profile setup[m
+    [38;5;222mteleport -p                 [m  [38;5;252mlist all profiles[m
+    [38;5;222mteleport -b                 [m  [38;5;252mpick local commits to send[m
+    [38;5;222mteleport sync staging       [m  [38;5;252msync using a specific profile[m
+    [38;5;222mteleport beam               [m  [38;5;252mpick local commits to send[m
+    [38;5;222mteleport beam -a            [m  [38;5;252mauto-select unsent commits, skip the commit picker[m
+    [38;5;222mteleport beam -cs           [m  [38;5;252mclean remote → beam commits → sync working tree[m
+    [38;5;222mteleport clean              [m  [38;5;252mdiscard dirty changes on the remote[m
+    [38;5;222mteleport status -p          [m  [38;5;252mverify pending work matches the remote[m
+    [38;5;222mteleport config set sync-untracked true[m  [38;5;252mremember -u for this wd[m
+    [38;5;222mteleport ship ./mycli       [m  [38;5;252mdeploy a built binary to its OS bin/ dir[m
+    [38;5;222mteleport shell              [m  [38;5;252mssh into the remote at the profile's path[m
+

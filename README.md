@@ -9,6 +9,13 @@ teleport init      # one-time profile setup (host + remote path)
 teleport sync      # upload changed files → iterate → commit clean
 ```
 
+<p align="center">
+  <img src="demo/gifs/main.gif" alt="teleport: list profiles, then sync working-tree changes to the remote" width="820">
+</p>
+
+> The GIFs below are simulations recorded with [VHS](https://github.com/charmbracelet/vhs) —
+> all hosts, paths, and files are invented (no real data). See [`demo/`](demo/) to regenerate them.
+
 ## How it works
 
 1. `teleport init` — interactive TUI: pick an SSH host from `~/.ssh/config`,
@@ -63,9 +70,56 @@ For the common actions you don't need to type the subcommand:
 The `beam` subcommand keeps its own flags (`--branch`, `--clean`,
 `--then-sync`, `--yes`) — use the full `teleport beam …` form for those.
 
+## Every command in action
+
+<details>
+<summary><b>init</b> — configure a profile (host picker → remote dir browser)</summary>
+<p align="center"><img src="demo/gifs/init.gif" alt="teleport init" width="820"></p>
+</details>
+
+<details open>
+<summary><b>sync</b> — upload working-tree changes with a live progress bar</summary>
+<p align="center"><img src="demo/gifs/sync.gif" alt="teleport sync" width="820"></p>
+</details>
+
+<details>
+<summary><b>status</b> — compare local files against the remote by SHA256</summary>
+<p align="center"><img src="demo/gifs/status.gif" alt="teleport status" width="820"></p>
+</details>
+
+<details>
+<summary><b>clean</b> — discard dirty changes on the remote (with confirmation)</summary>
+<p align="center"><img src="demo/gifs/clean.gif" alt="teleport clean" width="820"></p>
+</details>
+
+<details>
+<summary><b>pull</b> — download remote changes back to the working tree</summary>
+<p align="center"><img src="demo/gifs/pull.gif" alt="teleport pull" width="820"></p>
+</details>
+
+<details>
+<summary><b>profiles</b> — list configured profiles (<code>*</code> marks the default)</summary>
+<p align="center"><img src="demo/gifs/profiles.gif" alt="teleport profiles" width="820"></p>
+</details>
+
+<details>
+<summary><b>config</b> — per-directory defaults and last-sync overview</summary>
+<p align="center"><img src="demo/gifs/config.gif" alt="teleport config" width="820"></p>
+</details>
+
+<details>
+<summary><b>version</b> / <b>--help</b></summary>
+<p align="center"><img src="demo/gifs/version.gif" alt="teleport version" width="820"></p>
+<p align="center"><img src="demo/gifs/help.gif" alt="teleport --help" width="700"></p>
+</details>
+
 ## Beam — send selected commits
 
 `teleport beam` walks you from commits → files → upload:
+
+<p align="center">
+  <img src="demo/gifs/beam.gif" alt="teleport beam: pick commits, then upload grouped by commit" width="820">
+</p>
 
 1. **Commit picker** — lists local commits ahead of the remote. Commits already
    beamed to this profile show a green sent badge (`󰗠`) and a dimmed subject;
@@ -101,6 +155,10 @@ three steps (SFTP upload to `/tmp` → `chmod +x` → `mv` into place, with
 automatic `sudo` escalation when needed). The target OS is auto-detected from
 the binary's magic bytes (ELF → linux, Mach-O → macos, PE → windows).
 
+<p align="center">
+  <img src="demo/gifs/ship.gif" alt="teleport ship: upload, rename, chmod, and move a binary into place" width="820">
+</p>
+
 ```sh
 teleport ship ./bin/mycli       # explicit binary
 teleport ship                   # reads bin-dir; auto-picks the only file or prompts
@@ -115,6 +173,10 @@ teleport ship --name mycli      # rename the binary on the remote
 already `cd`'d into the profile's remote path — handy when you need to tail logs
 or restart a service on the box you've been syncing to. No extra setup: it
 reuses the host and path from the sync profile.
+
+<p align="center">
+  <img src="demo/gifs/shell.gif" alt="teleport shell: drop into an interactive remote shell at the profile's path" width="820">
+</p>
 
 ```sh
 teleport shell           # uses the local default profile

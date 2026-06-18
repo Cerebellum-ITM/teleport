@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Documentation
+- Added animated demo GIFs for every command and embedded them in the README: a hero GIF (`profiles` → `sync`), inline GIFs in the `beam`/`ship`/`shell` sections, and a collapsible "Every command in action" gallery (`init`, `sync`, `status`, `clean`, `pull`, `profiles`, `config`, `version`/`--help`). The GIFs are recorded with [VHS](https://github.com/charmbracelet/vhs) and are fully simulated: a `teleport()` shell function under `demo/sim/` renders each command's real styled output — colors and Nerd Font glyphs extracted byte-for-byte from the Go source via `gen-glyphs.sh` — using invented data only (no network, no real config, no private paths). The demo tooling lives in `demo/` (`sim/`, `tapes/`, `gifs/`) with `demo/README.md` documenting how to regenerate the GIFs with `vhs`.
+
 ## [0.5.0] - 2026-06-17
 
 ### Added
