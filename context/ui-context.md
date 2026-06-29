@@ -100,6 +100,10 @@ App-wide rules every TUI must follow:
 - In single-select file/directory browsers there is nothing to toggle, so
   `tab` (and `→/l`) descends into a directory; selection is `enter`. This is
   the one place `tab` does not mean "toggle".
+- In the commit picker, `m` toggles the **sent-mark** of the commit under the
+  cursor (the green `iconSent` badge + dimmed subject) and `M` toggles it for
+  all commits — a concept orthogonal to the beam selection (`tab`). The mark
+  edits the per-profile beamed store and is persisted only on `enter`.
 
 ## Component Patterns
 

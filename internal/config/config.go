@@ -203,6 +203,28 @@ func (c *LocalConfig) MarkBeamed(profile string, shas []string, t time.Time) {
 	}
 }
 
+// ApplyBeamedDelta applies a manual sent-mark delta to profile in one pass:
+// every SHA in add is recorded as beamed at time t, and every SHA in remove is
+// dropped. Removals of absent SHAs are no-ops. If the profile's set ends up
+// empty it is deleted (consistent with PruneBeamed). No-op when both slices are
+// empty. Mutator; caller is responsible for persisting via SaveLocal.
+func (c *LocalConfig) ApplyBeamedDelta(profile string, add, remove []string, t time.Time) {
+	if len(add) == 0 && len(remove) == 0 {
+		return
+	}
+	if len(add) > 0 {
+		c.MarkBeamed(profile, add, t)
+	}
+	if sent := c.BeamedCommits[profile]; sent != nil {
+		for _, sha := range remove {
+			delete(sent, sha)
+		}
+		if len(sent) == 0 {
+			delete(c.BeamedCommits, profile)
+		}
+	}
+}
+
 func (g *GlobalConfig) SetProfile(name string, p Profile) {
 	if g.Profiles == nil {
 		g.Profiles = make(map[string]Profile)

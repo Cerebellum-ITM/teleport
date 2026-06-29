@@ -42,3 +42,60 @@ func TestBeamedHelpers(t *testing.T) {
 		t.Fatalf("MarkBeamed(nil) changed state: %v", got)
 	}
 }
+
+func TestApplyBeamedDelta(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+
+	t.Run("add only", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.ApplyBeamedDelta("prod", []string{"a", "b"}, nil, now)
+		if got := cfg.SentSet("prod"); !got["a"] || !got["b"] || len(got) != 2 {
+			t.Fatalf("SentSet = %v, want {a,b}", got)
+		}
+	})
+
+	t.Run("mixed add and remove in one pass", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.MarkBeamed("prod", []string{"a", "b"}, now)
+		cfg.ApplyBeamedDelta("prod", []string{"c"}, []string{"a"}, now)
+		got := cfg.SentSet("prod")
+		if got["a"] || !got["b"] || !got["c"] || len(got) != 2 {
+			t.Fatalf("SentSet = %v, want {b,c}", got)
+		}
+	})
+
+	t.Run("removing an absent SHA is a no-op", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.MarkBeamed("prod", []string{"a"}, now)
+		cfg.ApplyBeamedDelta("prod", nil, []string{"zzz"}, now)
+		if got := cfg.SentSet("prod"); !got["a"] || len(got) != 1 {
+			t.Fatalf("SentSet = %v, want {a}", got)
+		}
+	})
+
+	t.Run("emptying a profile drops the profile key", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.MarkBeamed("prod", []string{"a"}, now)
+		cfg.ApplyBeamedDelta("prod", nil, []string{"a"}, now)
+		if _, ok := cfg.BeamedCommits["prod"]; ok {
+			t.Fatalf("empty prod profile should have been removed: %v", cfg.BeamedCommits)
+		}
+	})
+
+	t.Run("scoped per profile", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.MarkBeamed("staging", []string{"a"}, now)
+		cfg.ApplyBeamedDelta("prod", []string{"a"}, nil, now)
+		if got := cfg.SentSet("staging"); !got["a"] || len(got) != 1 {
+			t.Fatalf("staging untouched? = %v", got)
+		}
+	})
+
+	t.Run("empty delta is a no-op", func(t *testing.T) {
+		cfg := &LocalConfig{}
+		cfg.ApplyBeamedDelta("prod", nil, nil, now)
+		if len(cfg.BeamedCommits) != 0 {
+			t.Fatalf("empty delta created state: %v", cfg.BeamedCommits)
+		}
+	})
+}

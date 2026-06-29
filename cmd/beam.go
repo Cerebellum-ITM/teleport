@@ -112,9 +112,21 @@ func runBeam(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	} else {
-		selectedCommits, err = tui.RunCommitPicker(commits, localCfg.SentSet(profileName))
+		var delta tui.SentMarkDelta
+		selectedCommits, delta, err = tui.RunCommitPicker(commits, localCfg.SentSet(profileName))
 		if err != nil {
 			return err
+		}
+		// Persist manual sent-marks as soon as the picker confirms, before the
+		// file picker / connection / upload — so they survive even if the user
+		// cancels a later step or the upload fails. Done before the
+		// no-commits-selected early return on purpose: marking everything sent
+		// and selecting nothing to beam must still stick.
+		if len(delta.Added) > 0 || len(delta.Removed) > 0 {
+			localCfg.ApplyBeamedDelta(profileName, delta.Added, delta.Removed, time.Now())
+			if err := config.SaveLocal(localCfg); err != nil {
+				log.Warn("could not record manual sent marks", "err", err)
+			}
 		}
 		if len(selectedCommits) == 0 {
 			fmt.Println("No commits selected.")

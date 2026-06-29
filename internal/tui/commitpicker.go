@@ -18,11 +18,19 @@ const (
 type CommitPicker struct {
 	commits  []git.Commit
 	selected map[int]bool
-	sent     map[string]bool // commit SHA → already beamed to the active profile
+	sent     map[string]bool // commit SHA → already beamed to the active profile (live, mutated by m/M)
+	origSent map[string]bool // snapshot of sent at construction, for delta computation
 	cursor   int
 	height   int
 	done     bool
 	quitting bool
+}
+
+// SentMarkDelta reports the manual sent-mark changes made during a commit
+// picker session: Added are SHAs newly marked sent, Removed are SHAs unmarked.
+type SentMarkDelta struct {
+	Added   []string
+	Removed []string
 }
 
 var (
@@ -40,10 +48,17 @@ func NewCommitPicker(commits []git.Commit, sent map[string]bool) CommitPicker {
 		// Pre-select exactly the commits not yet beamed to this profile.
 		selected[i] = !sent[c.SHA]
 	}
+	// Snapshot the original sent set so SentDelta can diff against it after the
+	// user mutates the live `sent` map with m/M.
+	origSent := make(map[string]bool, len(sent))
+	for sha := range sent {
+		origSent[sha] = true
+	}
 	return CommitPicker{
 		commits:  commits,
 		selected: selected,
 		sent:     sent,
+		origSent: origSent,
 		height:   24,
 	}
 }
@@ -86,6 +101,34 @@ func (m CommitPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Re-select exactly the commits not yet beamed to this profile.
 			for i, c := range m.commits {
 				m.selected[i] = !m.sent[c.SHA]
+			}
+		case "m":
+			// Toggle the manual sent-mark of the commit under the cursor (live
+			// dim/badge update). Independent of the beam selection.
+			if len(m.commits) > 0 {
+				sha := m.commits[m.cursor].SHA
+				if m.sent[sha] {
+					delete(m.sent, sha)
+				} else {
+					m.sent[sha] = true
+				}
+			}
+		case "M":
+			// Bulk, symmetric: if every commit is already marked sent, unmark
+			// them all; otherwise mark them all sent.
+			allSent := true
+			for _, c := range m.commits {
+				if !m.sent[c.SHA] {
+					allSent = false
+					break
+				}
+			}
+			for _, c := range m.commits {
+				if allSent {
+					delete(m.sent, c.SHA)
+				} else {
+					m.sent[c.SHA] = true
+				}
 			}
 		case "enter":
 			m.done = true
@@ -145,7 +188,7 @@ func (m CommitPicker) View() tea.View {
 		b.WriteString(h + "\n")
 	}
 
-	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  u=unsent  enter=confirm  ctrl+c=quit") + "\n")
+	b.WriteString("\n" + dimStyle.Render("  tab=toggle  a=all  u=unsent  m=mark-sent  M=all-sent  enter=confirm  ctrl+c=quit") + "\n")
 	return tea.NewView(b.String())
 }
 
@@ -159,18 +202,36 @@ func (m CommitPicker) SelectedCommits() []git.Commit {
 	return out
 }
 
-func RunCommitPicker(commits []git.Commit, sent map[string]bool) ([]git.Commit, error) {
+// SentDelta reports the manual sent-mark changes made during this session,
+// scoped to the commits actually shown. It iterates only over m.commits, so a
+// SHA present in the beamed store but outside the displayed commits-ahead
+// window can never be reported as removed.
+func (m CommitPicker) SentDelta() SentMarkDelta {
+	var d SentMarkDelta
+	for _, c := range m.commits {
+		now, orig := m.sent[c.SHA], m.origSent[c.SHA]
+		switch {
+		case now && !orig:
+			d.Added = append(d.Added, c.SHA)
+		case !now && orig:
+			d.Removed = append(d.Removed, c.SHA)
+		}
+	}
+	return d
+}
+
+func RunCommitPicker(commits []git.Commit, sent map[string]bool) ([]git.Commit, SentMarkDelta, error) {
 	if len(commits) == 0 {
-		return nil, nil
+		return nil, SentMarkDelta{}, nil
 	}
 	p := tea.NewProgram(NewCommitPicker(commits, sent))
 	m, err := p.Run()
 	if err != nil {
-		return nil, fmt.Errorf("commit picker: %w", err)
+		return nil, SentMarkDelta{}, fmt.Errorf("commit picker: %w", err)
 	}
 	result := m.(CommitPicker)
 	if result.quitting {
-		return nil, fmt.Errorf("cancelled")
+		return nil, SentMarkDelta{}, fmt.Errorf("cancelled")
 	}
-	return result.SelectedCommits(), nil
+	return result.SelectedCommits(), result.SentDelta(), nil
 }
