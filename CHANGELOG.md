@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.0] - 2026-06-29
 
 ### Added
 - The `teleport beam` commit picker now lets you manually mark/unmark commits as "already beamed" without re-sending: `m` toggles the sent badge of the commit under the cursor (live), and `M` toggles all commits at once (symmetric — marks all, or unmarks all if every commit is already marked). This corrects the sent-tracking for commits that are genuinely on the remote but show as pending because identity is the exact SHA (new branches with no history, rebased/amended/cherry-picked commits, or the first beam from another machine). Marks accumulate during the picker session and are persisted to the per-profile beamed store only on `enter` (the write happens as soon as the picker confirms, so marks survive even if the file picker or upload is later cancelled); `ctrl+c` discards them. The delta (added + removed SHAs) is applied in a single atomic write via the new `LocalConfig.ApplyBeamedDelta`, and removals are scoped to the commits actually shown so stale SHAs in history are never disturbed. `beam --auto` skips the picker, so manual marking is inert there by design.
