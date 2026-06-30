@@ -177,6 +177,26 @@ func FileAtCommit(sha, path string) ([]byte, error) {
 	return out, nil
 }
 
+// FileBeforeCommit returns the blob contents of path as it was in the first
+// parent of commit sha. Used to view a file that this commit deleted.
+func FileBeforeCommit(sha, path string) ([]byte, error) {
+	out, err := exec.Command("git", "show", sha+"^:"+path).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git show %s^:%s: %w", sha, path, err)
+	}
+	return out, nil
+}
+
+// FileDiffAtCommit returns the unified diff that commit sha introduced for a
+// single path (the change relative to its first parent).
+func FileDiffAtCommit(sha, path string) ([]byte, error) {
+	out, err := exec.Command("git", "show", "--format=", sha, "--", path).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git show %s -- %s: %w", sha, path, err)
+	}
+	return out, nil
+}
+
 // HasUncommittedChanges reports whether the working tree has any
 // staged or unstaged changes according to git status --porcelain.
 func HasUncommittedChanges() (bool, error) {

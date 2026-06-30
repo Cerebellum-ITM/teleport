@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- The `teleport beam` file picker can now preview a file before sending it: with the cursor on a file, `v` opens the full file (the blob at that file's commit) and `d` opens the diff that commit introduced — both in a `bat`-style pager with syntax highlighting and a line-number gutter. Inside the viewer `tab` switches file ⇄ diff, scroll is `j/k`/`↑↓`/`ctrl+d`/`ctrl+u`/`g`/`G`, and `esc`/`q` returns to the picker with the cursor and selection intact. Viewing is orthogonal to selection — it never changes what gets beamed. Deleted files show their pre-delete contents in file mode and the deletion hunk in diff mode; binary blobs show a placeholder. Highlighting is done by a new `internal/highlight` package wrapping chroma (pure Go, no CGO), with the Catppuccin-Mocha style.
+- The diff view is rendered **delta-style**: the code on each line is syntax-highlighted, with a tinted two-column (old/new) line-number gutter marking added (green), removed (red), and context (dim) lines. Each hunk opens with a full-width bar separating the `@@` line range (dim) from the enclosing function/class context (accent), with a blank line between hunks. The redundant unified-diff file header (`diff --git`/`index`/`---`/`+++`) is hidden — the viewer header already shows the path and commit.
+
+### Changed
+- All user-facing text compiled into the binary is now English, and this is a documented hard rule for the repo (`context/code-standards.md`). The remaining Spanish strings were converted: the `teleport config` last-sync relative time ("hace N minutos/días" → "N minutes/days ago", with English month abbreviations) and the beam file picker's commit-filter hint ("filtrar por commit" → "filter by commit"). `CHANGELOG.md` and chat summaries may stay in Spanish; only binary strings are affected.
+
 ## [0.6.0] - 2026-06-29
 
 ### Added

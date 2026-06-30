@@ -7,6 +7,21 @@
 - Do not mix TUI, SSH, git, and config concerns in the same function.
 - No comments unless the WHY is non-obvious (hidden constraint, subtle invariant, workaround). Never describe what the code does.
 
+## Language (HARD RULE)
+
+- **All user-facing text is English. No exceptions.** Every string the user can
+  see — TUI labels, footers, headers, help text, log messages, error messages,
+  prompts, humanized dates, placeholders, and printed output — must be written
+  in English, regardless of the language the contributor or the AI session is
+  working in. This overrides any session-level Spanish working language.
+- This applies to *new* code and to *any* string you touch in existing code: if
+  you edit a file that still has Spanish UI text, convert it to English in the
+  same change. Do not add new Spanish strings under any circumstances.
+- Code comments may be in either language (they are not user-facing), but new
+  comments should prefer English for consistency.
+- `CHANGELOG.md` entries and the chat summaries reported to the user may stay in
+  Spanish; this rule is strictly about strings compiled into the binary.
+
 ## Go
 
 - Use `fmt.Errorf("context: %w", err)` for all error wrapping — never discard the original error.

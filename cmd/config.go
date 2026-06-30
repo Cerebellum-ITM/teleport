@@ -219,33 +219,32 @@ func printConfigOverview(local *config.LocalConfig) error {
 	return nil
 }
 
-// humanizeSince renders a Spanish, human-friendly "ago" string.
+// humanizeSince renders a human-friendly "ago" string.
 func humanizeSince(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return "hace unos segundos"
+		return "just now"
 	case d < time.Hour:
 		n := int(d / time.Minute)
 		if n == 1 {
-			return "hace 1 minuto"
+			return "1 minute ago"
 		}
-		return fmt.Sprintf("hace %d minutos", n)
+		return fmt.Sprintf("%d minutes ago", n)
 	case d < 24*time.Hour:
 		n := int(d / time.Hour)
 		if n == 1 {
-			return "hace 1 hora"
+			return "1 hour ago"
 		}
-		return fmt.Sprintf("hace %d horas", n)
+		return fmt.Sprintf("%d hours ago", n)
 	case d < 7*24*time.Hour:
 		n := int(d / (24 * time.Hour))
 		if n == 1 {
-			return "hace 1 día"
+			return "1 day ago"
 		}
-		return fmt.Sprintf("hace %d días", n)
+		return fmt.Sprintf("%d days ago", n)
 	default:
-		months := []string{"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"}
-		return fmt.Sprintf("hace %d %s", t.Day(), months[int(t.Month())-1])
+		return t.Format("Jan 2")
 	}
 }
 

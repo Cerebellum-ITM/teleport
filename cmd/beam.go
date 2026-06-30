@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
+	"github.com/pascualchavez/teleport/internal/highlight"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
@@ -150,7 +153,7 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	changes, err := tui.RunBeamFilePicker(allChanges, selectedCommits)
+	changes, err := tui.RunBeamFilePicker(allChanges, selectedCommits, beamViewerLoader)
 	if err != nil {
 		return err
 	}
@@ -352,4 +355,45 @@ func resolveBranch(explicit string) (string, error) {
 		return current, nil
 	}
 	return tui.RunBranchPicker(all, current)
+}
+
+// beamViewerLoader fetches and renders a file's contents or diff for the beam
+// file picker's viewer. All git + highlight I/O lives here so the TUI model
+// stays I/O-free (architecture invariant #3).
+func beamViewerLoader(fc git.FileChange, mode tui.ViewerMode, width int) (tui.ViewerContent, error) {
+	profile := colorprofile.Detect(os.Stdout, os.Environ())
+
+	if mode == tui.ViewDiff {
+		raw, err := git.FileDiffAtCommit(fc.SHA, fc.Path)
+		if err != nil {
+			return tui.ViewerContent{}, err
+		}
+		body, adds, dels := highlight.Diff(raw, fc.Path, width, profile)
+		return tui.ViewerContent{Body: body, Adds: adds, Dels: dels}, nil
+	}
+
+	// File mode. A deleted path has no blob at its own commit, so show the
+	// contents from just before the deletion.
+	var (
+		src  []byte
+		err  error
+		note string
+	)
+	if fc.Status == 'D' {
+		src, err = git.FileBeforeCommit(fc.SHA, fc.Path)
+		note = "(before delete)"
+	} else {
+		src, err = git.FileAtCommit(fc.SHA, fc.Path)
+	}
+	if err != nil {
+		return tui.ViewerContent{}, err
+	}
+	if highlight.IsBinary(src) {
+		return tui.ViewerContent{Binary: true, Bytes: len(src), Note: note}, nil
+	}
+	body, lang, lines, err := highlight.Code(src, fc.Path, profile)
+	if err != nil {
+		return tui.ViewerContent{}, err
+	}
+	return tui.ViewerContent{Body: body, Lang: lang, Lines: lines, Note: note}, nil
 }

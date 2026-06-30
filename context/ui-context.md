@@ -86,6 +86,7 @@ elsewhere.
 | `iconDelete`  | `󰮈 ` | File flagged for deletion in beam |
 | `iconCube`    | `󰆧 ` | Per-commit color marker in beam file picker |
 | `iconSent`    | `󰗠 ` | Commit already beamed to the active profile (commit picker) |
+| `iconDiff`    | `󰦓 ` | Diff-mode header in the beam file/diff viewer |
 
 ## Keybinding Conventions
 
@@ -104,6 +105,11 @@ App-wide rules every TUI must follow:
   cursor (the green `iconSent` badge + dimmed subject) and `M` toggles it for
   all commits — a concept orthogonal to the beam selection (`tab`). The mark
   edits the per-profile beamed store and is persisted only on `enter`.
+- In the beam file picker, `v` opens the file viewer and `d` the diff viewer for
+  the file under the cursor. Both are **read-only and orthogonal to the `tab`
+  selection** — viewing never changes what gets beamed. Inside the viewer is the
+  one place `tab` means **switch file ⇄ diff** (not toggle); `esc`/`q` returns to
+  the picker with cursor, filter, and checkboxes intact.
 
 ## Component Patterns
 
@@ -121,6 +127,15 @@ App-wide rules every TUI must follow:
 - Custom bubbletea model. Tracked files shown in dim (non-interactive). Untracked files toggleable with `tab` (`space` alias).
 - Checked files use green check icon; unchecked use orange box icon.
 - `enter` confirms; `ctrl+c` cancels.
+
+### File / Diff Viewer (beam)
+- Custom bubbletea sub-model embedded in the beam file picker (`internal/tui/beamfileviewer.go`), backed by `bubbles/v2/viewport` for scrolling. `bat`-style.
+- Header bar: file-type icon + path in header style, then dim metadata (`· lang · 󰜘 short-sha · N lines`); diff mode uses `iconDiff` and shows `+adds`/`−dels` (green `82` / red `203`).
+- Code is syntax-highlighted via `internal/highlight` (chroma, Catppuccin-Mocha style) with a dim (`241`) right-aligned line-number gutter.
+- Diff is **delta-style**: the code on each line is syntax-highlighted, and a tinted two-column (old/new) line-number gutter marks the change kind — added lines get a green chip (fg `83` on bg `22`), removed a red chip (fg `210` on bg `52`), context dim `241`.
+- Each hunk opens with a **full-width bar** (bg `238`, padded to the render width) showing the `@@ -a,b +c,d @@` range dim (`245`) and the section context (enclosing function/class) in accent (`117`), preceded by a blank separator line. The redundant file-header block (`diff --git`/`index`/`---`/`+++`) is dropped — the viewer header already carries the path and SHA. The bar width is the render width passed via `FileContentFunc`, captured when the viewer opens.
+- Binary blobs show a `「binary file · N bytes」` placeholder; empty content shows `「empty」`.
+- Keys: `j/k ↑/↓` scroll, `ctrl+d/ctrl+u` half-page, `g/G` top/bottom, `tab` switch file⇄diff, `esc`/`q` back, `ctrl+c` quit.
 
 ## Layout Notes
 
