@@ -53,6 +53,7 @@ type BeamFilePicker struct {
 	done     bool
 	quitting bool
 
+	selectedN  int                       // commits selected upstream (may exceed len(legend))
 	legend     []git.Commit              // contributing commits, in display order
 	shaStyle   map[string]lipgloss.Style // commit SHA → accent style
 	shortBySHA map[string]string         // commit SHA → short SHA (for the viewer header)
@@ -139,6 +140,7 @@ func NewBeamFilePicker(changes []git.FileChange, commits []git.Commit, load File
 		selected:   selected,
 		height:     24,
 		width:      80,
+		selectedN:  len(commits),
 		legend:     legend,
 		shaStyle:   shaStyle,
 		shortBySHA: shortBySHA,
@@ -298,7 +300,15 @@ func (m BeamFilePicker) View() tea.View {
 	// Status line: in "all" mode a count + filter hint; in filtered mode the
 	// active commit (colored cube + short SHA + subject + position).
 	if m.filter < 0 {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("  %d commits  ◂ ←/→ filter by commit ▸", len(m.legend))) + "\n")
+		// selectedN counts the commits chosen upstream; len(legend) counts those
+		// that own a winning (deduped) file. When older commits are fully
+		// superseded the two differ — surface both so the gap is explicit, not a
+		// silent drop.
+		count := fmt.Sprintf("%d commits", m.selectedN)
+		if m.selectedN > len(m.legend) {
+			count = fmt.Sprintf("%d commits · %d with files", m.selectedN, len(m.legend))
+		}
+		b.WriteString(dimStyle.Render("  "+count+"  ◂ ←/→ filter by commit ▸") + "\n")
 	} else {
 		cm := m.legend[m.filter]
 		style := m.shaStyle[cm.SHA]
