@@ -59,13 +59,16 @@ type beamFileViewer struct {
 	width    int
 	height   int
 
+	idx   int // 1-based position of fc within the active file range
+	total int // files in the active range (the set ←/→ steps through)
+
 	cache   map[ViewerMode]ViewerContent
 	loaded  map[ViewerMode]bool
 	loading bool
 	err     error
 }
 
-func newBeamFileViewer(fc git.FileChange, short string, shaStyle lipgloss.Style, mode ViewerMode, width, height int) beamFileViewer {
+func newBeamFileViewer(fc git.FileChange, short string, shaStyle lipgloss.Style, mode ViewerMode, idx, total, width, height int) beamFileViewer {
 	vh := height - 4 // header(1) + blank(1) + blank(1) + footer(1)
 	if vh < 1 {
 		vh = 1
@@ -75,6 +78,8 @@ func newBeamFileViewer(fc git.FileChange, short string, shaStyle lipgloss.Style,
 		short:    short,
 		shaStyle: shaStyle,
 		mode:     mode,
+		idx:      idx,
+		total:    total,
 		vp:       viewport.New(viewport.WithWidth(width), viewport.WithHeight(vh)),
 		width:    width,
 		height:   height,
@@ -151,7 +156,11 @@ func (v beamFileViewer) footer() string {
 	if v.mode == ViewDiff {
 		swap = "tab=file"
 	}
-	return dimStyle.Render("  j/k ↑/↓=scroll  ^d/^u=half-page  g/G=top/bottom  " + swap + "  esc=back  ctrl+c=quit")
+	nav := ""
+	if v.total > 1 {
+		nav = fmt.Sprintf("  ←/→=file %d/%d", v.idx, v.total)
+	}
+	return dimStyle.Render("  j/k ↑/↓=scroll  ^d/^u=half-page  g/G=top/bottom  " + swap + nav + "  esc=back  ctrl+c=quit")
 }
 
 func (v beamFileViewer) View() string {

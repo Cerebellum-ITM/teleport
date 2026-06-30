@@ -185,12 +185,30 @@ func (m BeamFilePicker) loadCmd(fc git.FileChange, mode ViewerMode) tea.Cmd {
 	}
 }
 
-// openViewer opens the embedded pager for the file under the cursor.
+// openViewer opens the embedded pager for the file under the cursor. The
+// viewer's position label (←/→ N/M) reflects the active filter range, so it
+// matches exactly the set stepFile walks.
 func (m BeamFilePicker) openViewer(mode ViewerMode) (tea.Model, tea.Cmd) {
 	c := m.changes[m.cursor]
-	m.viewer = newBeamFileViewer(c, m.shortBySHA[c.SHA], m.shaStyle[c.SHA], mode, m.width, m.height)
+	lo, hi := m.activeRange()
+	m.viewer = newBeamFileViewer(c, m.shortBySHA[c.SHA], m.shaStyle[c.SHA], mode, m.cursor-lo+1, hi-lo, m.width, m.height)
 	m.viewing = true
 	return m, m.loadCmd(c, mode)
+}
+
+// stepFile moves the cursor to the next/previous file within the active filter
+// range (wrapping at the ends) and re-opens the viewer on it, keeping the
+// current mode so file⇄diff stays put while paging through files. A no-op when
+// the range holds a single file.
+func (m BeamFilePicker) stepFile(delta int) (tea.Model, tea.Cmd) {
+	lo, hi := m.activeRange()
+	n := hi - lo
+	if n <= 1 {
+		return m, nil
+	}
+	rel := (m.cursor - lo + delta + n) % n
+	m.cursor = lo + rel
+	return m.openViewer(m.viewer.mode)
 }
 
 // updateViewing handles keys while the pager is open. esc/q close it (back to
@@ -203,6 +221,10 @@ func (m BeamFilePicker) updateViewing(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	case "esc", "q":
 		m.viewing = false
 		return m, nil
+	case "right", "n":
+		return m.stepFile(1)
+	case "left", "p":
+		return m.stepFile(-1)
 	case "tab":
 		other := ViewFile
 		if m.viewer.mode == ViewFile {

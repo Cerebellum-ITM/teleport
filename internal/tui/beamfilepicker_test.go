@@ -69,3 +69,77 @@ func TestBeamFilePickerCommitCount(t *testing.T) {
 		}
 	})
 }
+
+// pickerWith builds a picker, opens its viewer on the first file in the given
+// mode, and returns it ready for navigation assertions.
+func pickerWith(t *testing.T, changes []git.FileChange, commits []git.Commit, openKey string) BeamFilePicker {
+	t.Helper()
+	m := NewBeamFilePicker(changes, commits, noopLoader)
+	next, _ := m.Update(keyPress(openKey))
+	p := next.(BeamFilePicker)
+	if !p.viewing {
+		t.Fatalf("expected viewer open after %q", openKey)
+	}
+	return p
+}
+
+func TestBeamFilePickerStepFile(t *testing.T) {
+	commits := []git.Commit{{SHA: "x", Short: "x"}}
+	changes := []git.FileChange{
+		{Path: "a.go", Status: 'M', SHA: "x"},
+		{Path: "b.go", Status: 'M', SHA: "x"},
+		{Path: "c.go", Status: 'M', SHA: "x"},
+	}
+
+	t.Run("→ advances and wraps, position tracks", func(t *testing.T) {
+		p := pickerWith(t, changes, commits, "v")
+		if p.viewer.idx != 1 || p.viewer.total != 3 {
+			t.Fatalf("opened at %d/%d, want 1/3", p.viewer.idx, p.viewer.total)
+		}
+		want := []struct {
+			path string
+			idx  int
+		}{{"b.go", 2}, {"c.go", 3}, {"a.go", 1}} // third → wraps to top
+		for _, w := range want {
+			next, _ := p.Update(keyPress("n"))
+			p = next.(BeamFilePicker)
+			if got := p.changes[p.cursor].Path; got != w.path {
+				t.Fatalf("→ landed on %s, want %s", got, w.path)
+			}
+			if p.viewer.idx != w.idx {
+				t.Fatalf("position %d, want %d", p.viewer.idx, w.idx)
+			}
+		}
+	})
+
+	t.Run("← wraps backward", func(t *testing.T) {
+		p := pickerWith(t, changes, commits, "v")
+		next, _ := p.Update(keyPress("p"))
+		p = next.(BeamFilePicker)
+		if got := p.changes[p.cursor].Path; got != "c.go" {
+			t.Fatalf("← from top landed on %s, want c.go", got)
+		}
+	})
+
+	t.Run("mode is preserved while paging", func(t *testing.T) {
+		p := pickerWith(t, changes, commits, "d")
+		if p.viewer.mode != ViewDiff {
+			t.Fatalf("expected diff mode after d")
+		}
+		next, _ := p.Update(keyPress("n"))
+		p = next.(BeamFilePicker)
+		if p.viewer.mode != ViewDiff {
+			t.Fatalf("mode flipped to file while paging; want diff")
+		}
+	})
+
+	t.Run("single-file range is a no-op", func(t *testing.T) {
+		one := []git.FileChange{{Path: "solo.go", Status: 'M', SHA: "x"}}
+		p := pickerWith(t, one, commits, "v")
+		next, _ := p.Update(keyPress("n"))
+		p = next.(BeamFilePicker)
+		if p.cursor != 0 {
+			t.Fatalf("cursor moved on single-file range")
+		}
+	})
+}
