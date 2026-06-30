@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.8.0] - 2026-06-30
 
 ### Added
 - The `teleport beam` file/diff viewer can now page between files without returning to the picker: inside the viewer `←`/`→` (aliases `n`/`p`) jump to the previous/next file, wrapping at the ends. The current mode is kept across the jump, so paging through a commit shows each file's diff (or each file's contents) in sequence instead of forcing an `esc` → move cursor → re-open round-trip per file. Navigation respects the active commit filter — it steps through exactly the files the picker is showing — and the viewer footer gains a `←/→=file N/M` position indicator (shown only when the range holds more than one file).
