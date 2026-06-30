@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- The `teleport beam` file/diff viewer can now page between files without returning to the picker: inside the viewer `←`/`→` (aliases `n`/`p`) jump to the previous/next file, wrapping at the ends. The current mode is kept across the jump, so paging through a commit shows each file's diff (or each file's contents) in sequence instead of forcing an `esc` → move cursor → re-open round-trip per file. Navigation respects the active commit filter — it steps through exactly the files the picker is showing — and the viewer footer gains a `←/→=file N/M` position indicator (shown only when the range holds more than one file).
+
+### Fixed
+- The `teleport beam` file picker's commit count no longer silently undercounts. When several selected commits rework the same files, `git.FilesInCommits` dedupes each path to the newest commit that touched it, so older commits that own no surviving file used to vanish from the count line — selecting 5 commits could read "3 commits" with no explanation, even though all 5 are still beamed and credited as sent. The picker now tracks the selected-commit total separately from the contributing commits and surfaces the gap explicitly: it reads `5 commits · 3 with files` when they differ, and the plain `5 commits` when every selected commit owns a file. The filter-by-commit (`←/→`) still steps only through commits that have visible files.
+
 ## [0.7.0] - 2026-06-29
 
 ### Added
