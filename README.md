@@ -126,7 +126,12 @@ The `beam` subcommand keeps its own flags (`--branch`, `--clean`,
    the picker opens with only the not-yet-sent commits pre-selected. `tab`
    toggles, `a` toggles all, `u` re-selects exactly the unsent set.
 2. **File picker** — files from the selected commits, grouped and color-coded by
-   commit (`󰆧 [shortSHA]`). Filter to one commit at a time with `←`/`→`.
+   commit (`󰆧 [shortSHA]`). Filter to one commit at a time with `←`/`→`. Before
+   sending, preview any file in place: `v` opens the full file and `d` opens the
+   diff that commit introduced, both in a `bat`-style pager with syntax
+   highlighting (the diff is rendered delta-style — highlighted code with a
+   two-column line-number gutter). Inside the viewer `tab` switches file ⇄ diff,
+   `j/k`/`↑↓`/`ctrl+d`/`ctrl+u`/`g`/`G` scroll, and `esc` returns to the picker.
 3. **Send view** — upload progress grouped by commit: each commit is a colored
    header with its short SHA and subject, its files listed underneath marked
    `✓` uploaded / `✗` failed / `·` pending.
