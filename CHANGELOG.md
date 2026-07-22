@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Machine-readable output via a persistent `--json` flag.** With `--json`, each command prints a single JSON result object to `stdout` and sends all decoration/progress to `stderr`, so callers parse instead of scraping ANSI. `status` emits `{target, in_sync, total, drift[]}` (with `state` ∈ `differ`/`missing_remote`/`missing_local`); `sync`/`beam` emit `{command, target, sent, files[]}` (`beam` also lists the `commits[]`); `clean` emits `{command, target, reverted, removed, restored, removed_ignored}`; `pull` emits `{command, target, pulled, files[]}`. A headless `ErrNeedsTTY` under `--json` is serialized as `{"error":…,"hint":…}` on `stderr` with exit `2`.
 - **Documented, stable exit codes:** `0` success / in sync, `1` execution error or drift detected (`status`), `2` a selection or confirmation could not be resolved from flags without a TTY.
 
+### Documentation
+- README: documented the new `teleport mirror` command — a "Mirror" section explaining the git-object transfer and the same-hash guarantee, a `beam` vs `mirror` comparison table, the new command in the commands table and the "Three ways to ship code" intro, and a "Scripting (headless)" section covering the `--no-input`/`--json` flags and exit codes. Added a simulated `mirror` demo GIF (new `_sim_mirror` in `demo/sim/teleport-sim.sh` + `demo/tapes/mirror.tape`), embedded inline and in the command gallery.
+
 ## [0.8.0] - 2026-06-30
 
 ### Added

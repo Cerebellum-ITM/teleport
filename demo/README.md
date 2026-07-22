@@ -38,7 +38,7 @@ Run from the **repo root** (paths in the tapes are repo-relative):
 vhs demo/tapes/sync.tape
 
 # all of them
-for t in main version profiles config status pull clean ship shell init beam help; do
+for t in main version profiles config status pull clean mirror ship shell init beam help; do
   vhs demo/tapes/$t.tape
 done
 ```

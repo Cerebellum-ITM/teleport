@@ -25,7 +25,7 @@ teleport sync      # upload changed files → iterate → commit clean
    with a live progress bar. Add `-u` to include untracked files too.
 4. Iterate until satisfied, then commit cleanly.
 
-## Two ways to ship code
+## Three ways to ship code
 
 - **`sync`** — pushes your *working-tree* changes (everything modified since
   `HEAD`). Fast, dirty, throwaway: perfect for the edit-test-edit loop.
@@ -33,6 +33,10 @@ teleport sync      # upload changed files → iterate → commit clean
   commits (and which files within them) land on the remote, and teleport
   remembers what was already sent per profile. Use it to promote reviewed,
   committed work to a server without pushing your whole branch.
+- **`mirror`** — advances the remote's git branch to your local commits with the
+  **same hash and message** (transfers git *objects*, not file contents). The
+  remote ends clean at the new HEAD, its `git log` matching yours. Use it when
+  the box runs from a git checkout and you want it in lockstep with local git.
 
 ## Commands
 
@@ -41,6 +45,7 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport init` | Interactive profile setup (host picker → remote dir browser). `-p <name>` presets the profile name |
 | `teleport sync [profile]` | Upload changed tracked files. `-u` also includes untracked files |
 | `teleport beam [profile]` | Send selected local commits to the remote (cherry-pick style) |
+| `teleport mirror [profile]` | Advance the remote branch to your local commits (same hash + message) via `git bundle`. `-a` to HEAD, `-c` clean first, `-f` force |
 | `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
@@ -85,6 +90,11 @@ The `beam` subcommand keeps its own flags (`--branch`, `--clean`,
 <details>
 <summary><b>status</b> — compare local files against the remote by SHA256</summary>
 <p align="center"><img src="demo/gifs/status.gif" alt="teleport status" width="820"></p>
+</details>
+
+<details>
+<summary><b>mirror</b> — advance the remote branch to your local commits (same hash)</summary>
+<p align="center"><img src="demo/gifs/mirror.gif" alt="teleport mirror" width="820"></p>
 </details>
 
 <details>
@@ -156,6 +166,52 @@ teleport beam --yes         # -y: skip the clean confirmation prompt (use with -
 teleport beam -cs           # clean remote → beam commits → sync working tree
 ```
 
+## Mirror — reflect commits with the same hash
+
+`teleport mirror` advances the remote's checked-out branch to your local commits
+with an **identical hash and commit message**. Unlike `beam` (which copies file
+*contents* over SFTP and leaves the remote working tree dirty), `mirror`
+transfers the actual git *objects* via `git bundle`, so the remote's `git log`
+matches yours exactly and its working tree ends clean at the new HEAD — the hash
+is preserved by construction, not re-committed.
+
+<p align="center">
+  <img src="demo/gifs/mirror.gif" alt="teleport mirror: pick how far to advance the remote branch, transferred with the same hash" width="820">
+</p>
+
+The picker is **single-select** — you choose *how far to advance*. The reflected
+range is always the contiguous span from the remote HEAD up to the commit you
+pick, which is what guarantees the hash (a non-contiguous subset would need
+rebasing — that's what `beam` is for). It advances **whatever branch the remote
+has checked out**; you pick the destination branch once by checking it out
+there, and teleport never switches branches for you. The branch *name* never
+affects the hash — only ancestry decides fast-forward eligibility.
+
+By default `mirror` only **fast-forwards** and never discards remote commits; a
+diverged or dirty remote is refused unless you opt in:
+
+```sh
+teleport mirror              # pick how far to advance (target picker)
+teleport mirror -a           # -a: advance all the way to HEAD, skip the picker
+teleport mirror -b dev       # -b: mirror a branch other than the current one
+teleport mirror -c           # -c: run clean on the remote first (dirty working tree)
+teleport mirror -f           # -f: allow non-fast-forward — reset --hard (discards remote commits)
+teleport mirror -y           # -y: skip the force/clean confirmation prompt
+teleport mirror -cf          # clean + force-reset the remote to match local
+```
+
+A fresh remote repo (`git init` + `git checkout -b <branch>`, no commits) is
+bootstrapped automatically with a full bundle. `mirror` keeps no per-profile
+state — the remote HEAD is re-read every run as the source of truth.
+
+| | `beam` | `mirror` |
+|---|---|---|
+| Transfers | file *contents* (SFTP) | git *objects* (bundle) |
+| Remote git history | untouched | advances to the same SHAs |
+| Same hash + message | — | **yes** |
+| Remote working tree | left dirty (use `clean`) | left clean at the new HEAD |
+| Non-contiguous subset | yes | no (would break the hash) |
+
 ## Ship — deploy a binary
 
 `teleport ship [bin]` uploads a built binary to a remote `bin/` directory in
@@ -196,6 +252,29 @@ with the system `ssh` binary, so the session behaves and performs exactly like a
 hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and no teleport
 process lingers while you're connected. The host is resolved by `ssh` itself
 from `~/.ssh/config`.
+
+## Scripting (headless)
+
+Every command runs without a terminal, for CI and deploy pipelines. Two
+persistent flags:
+
+- `--no-input` — never prompt; resolve from flags or **fail closed** (exit `2`)
+  with a message naming the flag that was missing, instead of hanging on a
+  picker or confirmation. It's also implied automatically when stdin isn't a TTY.
+- `--json` — print a single JSON result object to stdout (drift, files sent,
+  mirror summary…) and route all decoration to stderr, so callers parse instead
+  of scraping ANSI.
+
+```sh
+teleport status --json          # {"target":…,"in_sync":false,"total":146,"drift":[…]}
+teleport beam -a --no-input     # send unsent commits, no picker (exit 2 if -a is missing)
+teleport mirror -a --no-input   # advance the remote to HEAD, unattended
+teleport clean --no-input       # --no-input implies -y; never discards without an explicit opt-in
+```
+
+Exit codes: `0` success / in sync · `1` execution error, or drift detected by
+`status` · `2` a selection or confirmation couldn't be resolved from flags
+without a TTY.
 
 ## Installation
 

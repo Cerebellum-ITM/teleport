@@ -251,6 +251,27 @@ _sim_beam() {
   sleep 0.8
 }
 
+_sim_mirror() {
+  # 1) target picker — choose how far to advance (contiguous prefix ⇒ same hash)
+  clear_screen
+  printf '\n  %s\n\n' "$(cbold "$CL_TITLEBLUE" 'Advance remote branch to…')"
+  printf '  %s %s  %s  %s\n' "$(cbold 212 '▶')" "$(cbold 212 'f6a9310')" 'Fix nil deref in handler'   "$(c "$CL_SEP" '2 hours ago')"
+  printf '    %s  %s  %s\n'  "$(cbold 212 '09d1246')" 'Add rate limiter to API'    "$(c "$CL_SEP" '5 hours ago')"
+  printf '    %s  %s  %s\n'  "$(cbold 212 'b7c1a20')" 'Bump deps'                  "$(c "$CL_SEP" '1 day ago')"
+  printf '\n  %s\n\n' "$(c "$CL_SEP" '── 80a7ff8 (remote HEAD)')"
+  printf '  %s\n' "$(c 150 'reflects 80a7ff8..f6a9310 — contiguous, same hash')"
+  printf '  %s\n' "$(c "$CL_SEP" '↑↓=navigate  enter=confirm  esc/q=cancel')"
+  sleep 2.0
+  # 2) transfer the git objects and fast-forward the remote branch
+  clear_screen
+  printf '%s\n' "$(c "$CL_SEP" 'Connecting to vps-staging...')"
+  sleep 0.5
+  printf '%s\n' "$(c "$CL_SEP" "Bundling 3 commit(s) → $HOST:$PATH_")"
+  sleep 0.8
+  printf '\n%s\n' "$(c "$CL_OK" "✓ mirrored $HOST:$PATH_  80a7ff8 → f6a9310 (3 commits, ff)")"
+  sleep 0.9
+}
+
 # --- dispatcher -----------------------------------------------------------
 teleport() {
   local cmd="${1:-}"; shift || true
@@ -267,6 +288,7 @@ teleport() {
     init|-i)           _sim_init ;;
     shell)             _sim_shell ;;
     beam|-b)           _sim_beam ;;
+    mirror)            _sim_mirror ;;
     *)                 _sim_help ;;
   esac
 }
