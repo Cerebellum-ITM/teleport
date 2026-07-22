@@ -192,6 +192,7 @@ func printHelp() {
 			{"teleport sync staging", "sync using a specific profile"},
 			{"teleport beam", "pick local commits to send"},
 			{"teleport beam -a", "auto-select unsent commits, skip the commit picker"},
+			{"teleport beam -C a1b2c3d", "send exactly this commit, headless-friendly"},
 			{"teleport beam -cs", "clean remote → beam commits → sync working tree"},
 			{"teleport mirror -a", "advance the remote branch to HEAD (same hashes)"},
 			{"teleport clean", "discard dirty changes on the remote"},

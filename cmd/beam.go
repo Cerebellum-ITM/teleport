@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
@@ -22,6 +23,7 @@ var (
 	beamClean    bool
 	beamYes      bool
 	beamAuto     bool
+	beamCommits  []string
 )
 
 var beamCmd = &cobra.Command{
@@ -37,6 +39,7 @@ func init() {
 	beamCmd.Flags().BoolVarP(&beamClean, "clean", "c", false, "run clean before beam (discard dirty changes on the remote)")
 	beamCmd.Flags().BoolVarP(&beamYes, "yes", "y", false, "skip the clean confirmation prompt")
 	beamCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "skip the commit picker; auto-select commits not yet sent and go straight to file review")
+	beamCmd.Flags().StringArrayVarP(&beamCommits, "commit", "C", nil, "send exactly this commit (repeatable); skips the picker")
 }
 
 func runBeam(cmd *cobra.Command, args []string) error {
@@ -50,11 +53,19 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --commit (explicit set) and -a (all unsent) are contradictory: one asks
+	// for exactly these, the other for everything not yet sent. Reject before
+	// touching anything.
+	if len(beamCommits) > 0 && beamAuto {
+		return fmt.Errorf("--commit and -a are mutually exclusive")
+	}
+
 	// Headless beam must be explicit about what to send: --no-input does not
 	// silently imply -a (that would risk beaming unintended commits). Fail
-	// closed before touching the remote so nothing is sent.
-	if !interactive() && !beamAuto {
-		return errNeedsTTY("pass -a to auto-select unsent commits")
+	// closed before touching the remote so nothing is sent. --commit is an
+	// equally explicit headless path.
+	if !interactive() && !beamAuto && len(beamCommits) == 0 {
+		return errNeedsTTY("pass -a (unsent commits) or --commit <sha> (explicit commits)")
 	}
 
 	// If --clean is set, connect now and run the clean phase before
@@ -109,7 +120,15 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	localCfg.PruneBeamed(profileName, ahead)
 
 	var selectedCommits []git.Commit
-	if beamAuto {
+	if len(beamCommits) > 0 {
+		// Explicit selection: send exactly the requested commits, skipping the
+		// picker. Resolve each ref to a full SHA and require it to be among the
+		// commits ahead — an out-of-range commit fails here, before connecting.
+		selectedCommits, err = resolveExplicitCommits(beamCommits, commits)
+		if err != nil {
+			return err
+		}
+	} else if beamAuto {
 		// Skip the picker: auto-select exactly the commits not yet beamed to
 		// this profile (the picker's default pre-selection).
 		sent := localCfg.SentSet(profileName)
@@ -391,6 +410,50 @@ func commitsFullySent(commitPaths map[string][]string, covered map[string]bool) 
 		}
 	}
 	return sent
+}
+
+// resolveExplicitCommits maps the --commit refs to entries of the ahead list.
+// Each ref is rev-parsed to a full SHA and must belong to ahead; any ref that
+// resolves outside it fails, naming the rejected commit and listing the valid
+// shorts. Duplicate refs are deduped. The result preserves ahead's order (the
+// branch's topological order), not the flag order, so uploads read the same as
+// the picker's.
+func resolveExplicitCommits(refs []string, ahead []git.Commit) ([]git.Commit, error) {
+	bySHA := make(map[string]git.Commit, len(ahead))
+	for _, c := range ahead {
+		bySHA[c.SHA] = c
+	}
+
+	want := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		sha, err := git.RevParse(ref)
+		if err != nil {
+			return nil, fmt.Errorf("resolve --commit %q: %w", ref, err)
+		}
+		if _, ok := bySHA[sha]; !ok {
+			return nil, fmt.Errorf("commit %s is not among the commits ahead of the remote; available: %s",
+				ref, availableShorts(ahead))
+		}
+		want[sha] = true
+	}
+
+	var selected []git.Commit
+	for _, c := range ahead {
+		if want[c.SHA] {
+			selected = append(selected, c)
+		}
+	}
+	return selected, nil
+}
+
+// availableShorts renders the short SHAs of ahead as a comma-separated list
+// for the --commit rejection message.
+func availableShorts(ahead []git.Commit) string {
+	shorts := make([]string, 0, len(ahead))
+	for _, c := range ahead {
+		shorts = append(shorts, c.Short)
+	}
+	return strings.Join(shorts, ", ")
 }
 
 func resolveBranch(explicit string) (string, error) {
