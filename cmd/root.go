@@ -94,4 +94,5 @@ func init() {
 	rootCmd.AddCommand(beamCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(mirrorCmd)
 }

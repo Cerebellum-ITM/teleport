@@ -36,6 +36,31 @@
 - Host key verification uses `~/.ssh/known_hosts` when present; falls back to `InsecureIgnoreHostKey` otherwise.
 - No user accounts, no tokens, no teleport-specific auth layer.
 
+## Deploy Models: `beam` vs `mirror` (Unit 20)
+
+teleport has two distinct ways to push local work to the remote:
+
+| | `beam` (file-level) | `mirror` (git-faithful) |
+| --- | --- | --- |
+| Transfers | file *contents* via SFTP | git *objects* via `git bundle` |
+| Remote git history | untouched (no commits created) | **advances** to the same SHAs |
+| Same hash + message | n/a | **yes**, by construction |
+| Remote working tree | left *dirty* (hence `clean`) | left *clean* at the new HEAD |
+| Non-contiguous subset | supported (cherry-pick of files) | not supported (gaps break the hash) |
+
+`mirror` bundles the contiguous range `remoteHEAD..chosen` (or full history for
+an unborn/diverged remote under `--force`), SFTPs it into the remote `.git/`,
+then `git fetch <bundle> refs/teleport/mirror` + `git merge --ff-only`
+(or `git reset --hard` under `--force`). It advances **whatever branch the
+remote has checked out** — it never runs `git checkout` itself; the operator
+selects the destination branch once by checking it out. The commit hash never
+depends on the branch name, only ancestry decides fast-forward eligibility.
+
+**Invariant: `mirror` never rewrites a commit.** It only fast-forwards the
+remote; the sole non-fast-forward path is an explicit `--force` (`reset --hard`)
+behind a confirmation (auto-confirmed only by `-y`/`--no-input`). It keeps no
+per-profile state — the remote HEAD is re-read each run as the source of truth.
+
 ## Headless Mode (Unit 19)
 
 - A single guard, `cmd.interactive()`, decides whether any TUI (prompt, picker, viewer, confirmation) may open: it returns true only when stdin is a real TTY **and** the persistent `--no-input` flag was not set. Every TUI call site consults it; no per-`Opts` boolean is threaded through.
