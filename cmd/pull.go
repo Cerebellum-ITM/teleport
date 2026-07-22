@@ -9,6 +9,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/pascualchavez/teleport/internal/git"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/spf13/cobra"
 )
 
@@ -20,9 +21,9 @@ var pullCmd = &cobra.Command{
 }
 
 var (
-	pullOKStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	pullDeleteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	pullFailStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	pullOKStyle     = lipgloss.NewStyle().Foreground(theme.Success)
+	pullDeleteStyle = lipgloss.NewStyle().Foreground(theme.Warn)
+	pullFailStyle   = lipgloss.NewStyle().Foreground(theme.Danger)
 )
 
 func init() {

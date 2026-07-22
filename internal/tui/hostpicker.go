@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const iconServer = "󰒋 "
@@ -15,8 +16,10 @@ type hostItem struct {
 	host sshpkg.Host
 }
 
-func (h hostItem) Title() string       { return iconServer + h.host.Name }
-func (h hostItem) Description() string { return h.host.User + "@" + h.host.Hostname + ":" + h.host.Port }
+func (h hostItem) Title() string { return iconServer + h.host.Name }
+func (h hostItem) Description() string {
+	return h.host.User + "@" + h.host.Hostname + ":" + h.host.Port
+}
 func (h hostItem) FilterValue() string { return h.host.Name + " " + h.host.Hostname }
 
 type HostPicker struct {
@@ -26,8 +29,8 @@ type HostPicker struct {
 }
 
 var titleStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("62")).
-	Foreground(lipgloss.Color("230")).
+	Background(theme.HeaderBg).
+	Foreground(theme.HeaderFg).
 	Padding(0, 1)
 
 func NewHostPicker(hosts []sshpkg.Host) HostPicker {
@@ -40,7 +43,7 @@ func NewHostPicker(hosts []sshpkg.Host) HostPicker {
 	l.Title = "Select SSH Host"
 	l.Styles.Title = titleStyle
 	l.SetFilteringEnabled(true)
-	l.SetFilterText("")          // populates filteredItems synchronously so the list isn't blank
+	l.SetFilterText("")              // populates filteredItems synchronously so the list isn't blank
 	l.SetFilterState(list.Filtering) // switch to edit mode with the input focused
 
 	return HostPicker{list: l}

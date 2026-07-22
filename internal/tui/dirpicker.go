@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const (
@@ -48,10 +49,10 @@ type DirPicker struct {
 }
 
 var (
-	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	cursorStyle   = lipgloss.NewStyle().Foreground(theme.Accent).Bold(true)
+	selectedStyle = lipgloss.NewStyle().Foreground(theme.Path)
+	dimStyle      = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(theme.HeaderBg)
 )
 
 func NewDirPicker(client *sshpkg.Client, startPath string) DirPicker {

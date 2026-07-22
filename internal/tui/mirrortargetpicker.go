@@ -7,9 +7,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/pascualchavez/teleport/internal/git"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
-var mirrorGuideStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("150"))
+var mirrorGuideStyle = lipgloss.NewStyle().Foreground(theme.Hint)
 
 type mirrorTargetModel struct {
 	commits  []git.Commit
@@ -102,9 +103,13 @@ func (m mirrorTargetModel) View() tea.View {
 		c := m.commits[i]
 		prefix := "    "
 		if i == m.cursor {
-			prefix = "  ▶ "
+			prefix = "  " + cursorStyle.Render("▶") + " "
 		}
-		line := prefix + boldStyle.Render(c.Short) + "  " + c.Subject +
+		subject := c.Subject
+		if chip, rest, ok := theme.TagChip(c.Subject); ok {
+			subject = chip + " " + rest
+		}
+		line := prefix + commitShortStyle.Render(c.Short) + "  " + subject +
 			"  " + dimStyle.Render(c.RelDate)
 		b.WriteString(line + "\n")
 	}

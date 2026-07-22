@@ -14,6 +14,7 @@ import (
 	"github.com/pascualchavez/teleport/internal/bindetect"
 	"github.com/pascualchavez/teleport/internal/config"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -32,9 +33,9 @@ var shipCmd = &cobra.Command{
 }
 
 var (
-	shipOKStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	shipDimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	shipBoldStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	shipOKStyle   = lipgloss.NewStyle().Foreground(theme.Success)
+	shipDimStyle  = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	shipBoldStyle = lipgloss.NewStyle().Bold(true).Foreground(theme.TextBright)
 )
 
 // suppress unused import warning when log is only used in TouchLastSync path
@@ -107,7 +108,7 @@ func runShip(_ *cobra.Command, args []string) error {
 	tmpDir := fmt.Sprintf("/tmp/teleport-ship-%d-%d", os.Getpid(), time.Now().UnixNano())
 	localBasename := filepath.Base(localPath)
 	tmpUploadPath := tmpDir + "/" + localBasename // upload keeps original filename
-	tmpFinalPath := tmpDir + "/" + remoteName      // after rename (same if no rename)
+	tmpFinalPath := tmpDir + "/" + remoteName     // after rename (same if no rename)
 	finalPath := binDir + "/" + remoteName
 	needsRename := remoteName != localBasename
 

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +34,7 @@ func init() {
 		"also remove gitignored files (builds, caches, node_modules)")
 }
 
-var cleanOKStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+var cleanOKStyle = lipgloss.NewStyle().Foreground(theme.Success)
 
 type cleanCounts struct {
 	Reverted       int

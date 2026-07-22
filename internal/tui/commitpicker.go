@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/pascualchavez/teleport/internal/git"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const (
@@ -34,9 +35,9 @@ type SentMarkDelta struct {
 }
 
 var (
-	commitShortStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	commitDateStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	sentStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	commitShortStyle = lipgloss.NewStyle().Bold(true).Foreground(theme.Accent)
+	commitDateStyle  = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	sentStyle        = lipgloss.NewStyle().Foreground(theme.Success)
 )
 
 func NewCommitPicker(commits []git.Commit, sent map[string]bool) CommitPicker {
@@ -166,12 +167,21 @@ func (m CommitPicker) View() tea.View {
 		}
 
 		// Sent badge: green icon for beamed commits, blank (same width) for the
-		// rest so the columns stay aligned. The subject is dimmed when sent.
+		// rest so the columns stay aligned. The subject is dimmed when sent; the
+		// [TAG] prefix keeps its semantic color even then.
+		chip, rest, hasTag := theme.TagChip(c.Subject)
 		subject := c.Subject
+		if hasTag {
+			subject = chip + " " + rest
+		}
 		badge := strings.Repeat(" ", len([]rune(iconSent)))
 		if m.sent[c.SHA] {
 			badge = sentStyle.Render(iconSent)
-			subject = dimStyle.Render(subject)
+			if hasTag {
+				subject = chip + " " + dimStyle.Render(rest)
+			} else {
+				subject = dimStyle.Render(c.Subject)
+			}
 		}
 
 		line := fmt.Sprintf("%s%s%s%s  %s  %s",

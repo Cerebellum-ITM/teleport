@@ -12,6 +12,7 @@ import (
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,7 @@ var (
 	mirrorYes    bool
 )
 
-var mirrorOKStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+var mirrorOKStyle = lipgloss.NewStyle().Foreground(theme.Success)
 
 var mirrorCmd = &cobra.Command{
 	Use:   "mirror [profile]",

@@ -10,15 +10,16 @@ import (
 	"unsafe"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 var (
-	slActiveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
-	slDoneStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	slErrStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	slSkipStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	slElapsedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	slBarStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
+	slActiveStyle  = lipgloss.NewStyle().Foreground(theme.Gold)
+	slDoneStyle    = lipgloss.NewStyle().Foreground(theme.Success)
+	slErrStyle     = lipgloss.NewStyle().Foreground(theme.Danger)
+	slSkipStyle    = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	slElapsedStyle = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	slBarStyle     = lipgloss.NewStyle().Foreground(theme.Icon)
 )
 
 var slSpinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 // CleanPlan describes the changes a clean operation is about to make
@@ -26,10 +27,10 @@ func (p CleanPlan) Total() int {
 }
 
 var (
-	cleanRevertStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	cleanRemoveStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	cleanRestoreStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
-	cleanIgnoredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	cleanRevertStyle  = lipgloss.NewStyle().Foreground(theme.Warn)
+	cleanRemoveStyle  = lipgloss.NewStyle().Foreground(theme.Danger)
+	cleanRestoreStyle = lipgloss.NewStyle().Foreground(theme.Icon)
+	cleanIgnoredStyle = lipgloss.NewStyle().Foreground(theme.TextDim)
 )
 
 type cleanConfirmModel struct {

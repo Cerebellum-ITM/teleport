@@ -14,6 +14,7 @@ import (
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/spf13/cobra"
 )
 
@@ -42,9 +43,9 @@ type statusResult struct {
 }
 
 var (
-	statusDiffStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	statusMissingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	statusOKStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	statusDiffStyle    = lipgloss.NewStyle().Foreground(theme.Warn)
+	statusMissingStyle = lipgloss.NewStyle().Foreground(theme.Danger)
+	statusOKStyle      = lipgloss.NewStyle().Foreground(theme.Success)
 )
 
 func runStatus(cmd *cobra.Command, args []string) error {

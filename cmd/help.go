@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const (
@@ -19,47 +20,47 @@ const (
 var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("255")).
-			Background(lipgloss.Color("60")).
+			Foreground(theme.TextBright).
+			Background(theme.HeaderBg).
 			Padding(0, 1)
 
 	sectionStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("104"))
+			Foreground(theme.Section)
 
 	iconStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("116"))
+			Foreground(theme.Icon)
 
 	nameStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("255")).
+			Foreground(theme.TextBright).
 			Width(12)
 
 	descStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
+			Foreground(theme.Text)
 
 	shortStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("150")).
+			Foreground(theme.Hint).
 			Width(6)
 
 	longFlagStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("248")).
+			Foreground(theme.TextDim).
 			Width(14)
 
 	exampleCmdStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("222"))
+			Foreground(theme.Gold)
 
 	keyNameStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("255")).
+			Foreground(theme.TextBright).
 			Width(18)
 
 	keyTypeStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("150")).
+			Foreground(theme.Hint).
 			Width(6)
 
 	keyDefStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("248")).
+			Foreground(theme.TextDim).
 			Width(10)
 )
 

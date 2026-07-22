@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const (
@@ -25,9 +26,9 @@ type FilePicker struct {
 }
 
 var (
-	trackedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	checkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	uncheckedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	trackedStyle   = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	checkStyle     = lipgloss.NewStyle().Foreground(theme.Success)
+	uncheckedStyle = lipgloss.NewStyle().Foreground(theme.Warn)
 )
 
 func NewFilePicker(tracked, untracked []string) FilePicker {

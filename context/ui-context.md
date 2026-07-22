@@ -8,22 +8,43 @@ vivid accent colors for the selected item and headers, and dim text for
 secondary information. The TUI adapts to the terminal's color profile via
 charmbracelet/colorprofile.
 
-## Color Tokens (lipgloss)
+## Color Tokens (`internal/theme`)
 
-All components must use these named lipgloss colors — no hardcoded hex values
-outside this file.
+The single source of truth for color is the **`internal/theme`** package. Every
+`cmd/*.go` and `internal/tui/*.go` style references a token from there — **no
+`lipgloss.Color("NN")` is allowed outside `internal/theme`** (the one exception
+is `internal/highlight`, which is chroma's domain). This is enforceable by grep.
 
-| Role                  | lipgloss token            | ANSI / Adaptive color |
-| --------------------- | ------------------------- | --------------------- |
-| Header / title        | `lipgloss.Color("62")`    | Blue-purple           |
-| Header foreground     | `lipgloss.Color("230")`   | Near-white            |
-| Cursor / selected row | `lipgloss.Color("212")`   | Pink                  |
-| Success / selected check | `lipgloss.Color("82")` | Green                 |
-| Unselected toggle     | `lipgloss.Color("214")`   | Orange/amber          |
-| Dim / secondary text  | `lipgloss.Color("241")`   | Grey                  |
-| Tracked file text     | `lipgloss.Color("241")`   | Grey (same as dim)    |
-| Delete / warning      | `lipgloss.Color("203")`   | Red-orange            |
-| Sent / beamed badge   | `lipgloss.Color("82")`    | Green (same as check) |
+| Token (`theme.`) | ANSI | Role |
+| ---------------- | ---- | ---- |
+| `Accent`      | `212` | cursor / selected row (pink) — **all** pickers |
+| `Success`     | `82`  | ✓, sent badge, OK (green) |
+| `Warn`        | `214` | unselected toggle, warnings (amber) |
+| `Danger`      | `203` | delete, upload-fail, error, missing (red — one red only) |
+| `HeaderBg` / `HeaderFg` | `62` / `230` | title bars / header text |
+| `Section`     | `104` | section headers (help) |
+| `Icon`        | `116` | file-type / section glyphs, progress bars (cyan) |
+| `Path`        | `86`  | remote paths |
+| `Gold`        | `220` | gold accents (help examples, ship active step) |
+| `TextBright`  | `255` | highlighted names / values |
+| `Text`        | `252` | primary body text, progress stats |
+| `TextDim`     | `245` | secondary text |
+| `TextFaint`   | `241` | tertiary text, gutters, separators |
+| `Hint`        | `150` | guide / help lines (soft green) |
+
+### Commit tag chips (`theme.TagChip`)
+
+`theme.TagChip(subject)` parses a leading `[TAG]` (CommitCraft convention) and
+returns a bold, foreground-only colored chip so commit lists read by type. Used
+in the commit picker and the mirror target picker. No tag → no chip (the subject
+renders plain).
+
+| Tag | Color | | Tag | Color |
+| --- | ----- | --- | --- | ----- |
+| `ADD` | `41` green | | `DOC` | `39` blue |
+| `FIX` | `209` red | | `MERGE` | `45` cyan |
+| `IMP` / `REF` | `141` purple | | `REL` | `220` gold |
+| `DEL` / `REM` | `203` red | | other / none | `245` grey |
 
 ### Beam commit palette
 
@@ -31,9 +52,9 @@ The beam file picker groups files by the commit they originate from and
 tints each group with a distinct accent so the list reads at a glance. These
 are the only colors that may cycle/repeat; they are assigned to commits in
 display order and reused (mod length) when there are more commits than colors.
-Defined as `beamCommitPalette` in `internal/tui/beamfilepicker.go`. The set
-avoids the reserved roles above (green check `82`, red delete `203`, orange
-toggle `214`, grey dim `241`, header `62`, cursor pink `212`).
+Defined as `theme.CommitPalette` in `internal/theme` (beam consumes it via the
+`beamCommitPalette` alias — values and purpose unchanged: distinguish the **many
+commits** beam can send at once). The set avoids the reserved roles above.
 
 | Index | lipgloss token            | Color         |
 | ----- | ------------------------- | ------------- |

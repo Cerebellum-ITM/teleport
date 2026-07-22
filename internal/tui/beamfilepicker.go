@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/pascualchavez/teleport/internal/git"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 const (
@@ -16,29 +17,14 @@ const (
 	iconCube   = "󰆧 "
 )
 
-var deleteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+var deleteStyle = lipgloss.NewStyle().Foreground(theme.Danger)
 
 // beamCommitPalette assigns a distinct accent color to each contributing
 // commit so files can be grouped visually by origin. It cycles when there are
 // more commits than colors. Documented in context/ui-context.md.
-var beamCommitPalette = []lipgloss.Style{
-	lipgloss.NewStyle().Foreground(lipgloss.Color("39")),  // blue
-	lipgloss.NewStyle().Foreground(lipgloss.Color("45")),  // cyan
-	lipgloss.NewStyle().Foreground(lipgloss.Color("43")),  // teal
-	lipgloss.NewStyle().Foreground(lipgloss.Color("81")),  // sky
-	lipgloss.NewStyle().Foreground(lipgloss.Color("220")), // gold
-	lipgloss.NewStyle().Foreground(lipgloss.Color("215")), // light orange
-	lipgloss.NewStyle().Foreground(lipgloss.Color("208")), // orange
-	lipgloss.NewStyle().Foreground(lipgloss.Color("209")), // salmon
-	lipgloss.NewStyle().Foreground(lipgloss.Color("205")), // pink
-	lipgloss.NewStyle().Foreground(lipgloss.Color("213")), // light magenta
-	lipgloss.NewStyle().Foreground(lipgloss.Color("199")), // deep pink
-	lipgloss.NewStyle().Foreground(lipgloss.Color("171")), // magenta
-	lipgloss.NewStyle().Foreground(lipgloss.Color("141")), // purple
-	lipgloss.NewStyle().Foreground(lipgloss.Color("99")),  // violet
-	lipgloss.NewStyle().Foreground(lipgloss.Color("147")), // periwinkle
-	lipgloss.NewStyle().Foreground(lipgloss.Color("105")), // indigo
-}
+// beamCommitPalette is the per-commit accent set, now sourced from the shared
+// theme package (values unchanged) so the whole app draws from one palette.
+var beamCommitPalette = theme.CommitPalette
 
 // beamRange is the contiguous [lo, hi) slice of m.changes that belongs to one
 // commit, used by the per-commit filter view.

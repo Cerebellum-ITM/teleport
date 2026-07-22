@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/pascualchavez/teleport/internal/theme"
 )
 
 // SyncFileDone is sent by the uploader goroutine after each file completes.
@@ -20,13 +21,13 @@ type SyncFileDone struct {
 type syncTickMsg time.Time
 
 var (
-	spOKStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
-	spErrStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	spSepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	spBarStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
-	spStatsStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	spHeaderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	spIconStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("116"))
+	spOKStyle     = lipgloss.NewStyle().Foreground(theme.Success)
+	spErrStyle    = lipgloss.NewStyle().Foreground(theme.Danger)
+	spSepStyle    = lipgloss.NewStyle().Foreground(theme.TextFaint)
+	spBarStyle    = lipgloss.NewStyle().Foreground(theme.Icon)
+	spStatsStyle  = lipgloss.NewStyle().Foreground(theme.Text)
+	spHeaderStyle = lipgloss.NewStyle().Foreground(theme.Text)
+	spIconStyle   = lipgloss.NewStyle().Foreground(theme.Icon)
 )
 
 // BeamGroup is one commit's section in the beam send view: a colored header
