@@ -8,9 +8,11 @@ import (
 
 	"charm.land/huh/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
 	"github.com/pascualchavez/teleport/internal/git"
+	"github.com/pascualchavez/teleport/internal/highlight"
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
 	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
@@ -140,7 +142,7 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	if mirrorAuto {
 		chosen = commits[0] // newest = branch tip
 	} else {
-		c, ok, err := tui.RunMirrorTargetPicker(commits, remoteHEAD)
+		c, ok, err := tui.RunMirrorTargetPicker(commits, remoteHEAD, mirrorCommitDiffLoader)
 		if err != nil {
 			return err
 		}
@@ -246,6 +248,19 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	}
 	emit(res, func() { printMirrorSummary(res) })
 	return nil
+}
+
+// mirrorCommitDiffLoader renders a commit's full diff for the target picker's
+// `d` preview. All git + highlight I/O lives here so the TUI stays I/O-free
+// (architecture invariant #3).
+func mirrorCommitDiffLoader(sha string, width int) (tui.ViewerContent, error) {
+	profile := colorprofile.Detect(os.Stdout, os.Environ())
+	raw, err := git.CommitDiff(sha)
+	if err != nil {
+		return tui.ViewerContent{}, err
+	}
+	body, adds, dels := highlight.CommitDiff(raw, width, profile)
+	return tui.ViewerContent{Body: body, Adds: adds, Dels: dels}, nil
 }
 
 func targetOf(p config.Profile) string { return fmt.Sprintf("%s:%s", p.Host, p.Path) }

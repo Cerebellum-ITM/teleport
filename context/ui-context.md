@@ -126,6 +126,9 @@ App-wide rules every TUI must follow:
   cursor (the green `iconSent` badge + dimmed subject) and `M` toggles it for
   all commits — a concept orthogonal to the beam selection (`tab`). The mark
   edits the per-profile beamed store and is persisted only on `enter`.
+- In the mirror target picker, `d` opens a read-only pager showing the full diff
+  of the commit under the cursor (`git show`, delta-style). `esc`/`q` returns to
+  the picker with the cursor intact; `enter` still confirms the target.
 - In the beam file picker, `v` opens the file viewer and `d` the diff viewer for
   the file under the cursor. Both are **read-only and orthogonal to the `tab`
   selection** — viewing never changes what gets beamed. Inside the viewer is the

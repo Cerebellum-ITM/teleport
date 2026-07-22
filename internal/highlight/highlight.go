@@ -187,6 +187,57 @@ func Diff(raw []byte, filename string, width int, p colorprofile.Profile) (body 
 	return b.String(), adds, dels
 }
 
+// fileBarStyle is the full-width header bar naming each file inside a
+// multi-file commit diff (accent text on the same subtle bar background as the
+// hunk bar, so the two read as one system).
+var fileBarStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117")).Background(lipgloss.Color("238"))
+
+// diffGitRe matches the "diff --git a/<old> b/<new>" line that opens each file
+// section in a multi-file diff; the b/ path is the post-change name.
+var diffGitRe = regexp.MustCompile(`(?m)^diff --git a/.+ b/(.+)$`)
+
+// CommitDiff renders a whole-commit (multi-file) diff: each file gets a header
+// bar with its path, followed by that file's delta-style hunks (reusing Diff,
+// so per-file syntax highlighting comes for free). Returns the body and the
+// total added/removed line counts across all files. width pads the bars.
+func CommitDiff(raw []byte, width int, p colorprofile.Profile) (body string, adds, dels int) {
+	s := string(raw)
+	locs := diffGitRe.FindAllStringSubmatchIndex(s, -1)
+	if len(locs) == 0 {
+		return "", 0, 0
+	}
+	var b strings.Builder
+	for i, loc := range locs {
+		start := loc[0]
+		end := len(s)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		section := s[start:end]
+		path := s[loc[2]:loc[3]] // capture group 1 = b/<path>
+
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(fileBar(path, width) + "\n")
+		fbody, fa, fd := Diff([]byte(section), path, width, p)
+		b.WriteString(fbody)
+		adds += fa
+		dels += fd
+	}
+	return b.String(), adds, dels
+}
+
+// fileBar renders a file path as a full-width header bar.
+func fileBar(path string, width int) string {
+	label := "  " + path
+	pad := width - lipgloss.Width(label)
+	if pad < 0 {
+		pad = 0
+	}
+	return fileBarStyle.Render(label + strings.Repeat(" ", pad))
+}
+
 // diffGutter renders the tinted two-column (old/new) line-number chip plus the
 // dim separator. A blank side keeps the columns aligned across change kinds.
 func diffGutter(st lipgloss.Style, old, new string) string {

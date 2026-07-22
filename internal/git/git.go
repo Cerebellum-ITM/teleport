@@ -187,6 +187,16 @@ func FileBeforeCommit(sha, path string) ([]byte, error) {
 	return out, nil
 }
 
+// CommitDiff returns the full multi-file diff a commit introduced relative to
+// its first parent (git show, no commit message/metadata).
+func CommitDiff(sha string) ([]byte, error) {
+	out, err := exec.Command("git", "show", "--format=", sha).Output()
+	if err != nil {
+		return nil, fmt.Errorf("git show %s: %w", sha, err)
+	}
+	return out, nil
+}
+
 // FileDiffAtCommit returns the unified diff that commit sha introduced for a
 // single path (the change relative to its first parent).
 func FileDiffAtCommit(sha, path string) ([]byte, error) {
