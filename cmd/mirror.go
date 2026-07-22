@@ -42,22 +42,24 @@ func init() {
 	mirrorCmd.Flags().BoolVarP(&mirrorClean, "clean", "c", false, "run clean before mirroring (discard dirty remote changes)")
 	mirrorCmd.Flags().BoolVarP(&mirrorForce, "force", "f", false, "allow non-fast-forward (reset --hard; discards remote commits)")
 	mirrorCmd.Flags().BoolVarP(&mirrorYes, "yes", "y", false, "skip the force/clean confirmation prompt")
+	registerThenFlag(mirrorCmd)
 }
 
 // mirrorResult is the --json shape for mirror.
 type mirrorResult struct {
-	Command     string   `json:"command"`
-	Target      string   `json:"target"`
-	Branch      string   `json:"branch"`
-	From        string   `json:"from"`
-	To          string   `json:"to"`
-	Commits     []string `json:"commits"`
-	FastForward bool     `json:"fast_forward"`
-	Forced      bool     `json:"forced"`
+	Command     string         `json:"command"`
+	Target      string         `json:"target"`
+	Branch      string         `json:"branch"`
+	From        string         `json:"from"`
+	To          string         `json:"to"`
+	Commits     []string       `json:"commits"`
+	FastForward bool           `json:"fast_forward"`
+	Forced      bool           `json:"forced"`
+	Actions     []actionResult `json:"actions,omitempty"`
 }
 
 func runMirror(cmd *cobra.Command, args []string) error {
-	profile, _, err := resolveProfile(args)
+	profile, profileName, err := resolveProfile(args)
 	if err != nil {
 		return err
 	}
@@ -67,6 +69,15 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	// before connecting so nothing is transferred.
 	if !interactive() && !mirrorAuto {
 		return errNeedsTTY("pass -a to mirror all commits ahead of the remote")
+	}
+
+	// Validate --then actions up front so a typo (or an un-confirmable
+	// confirm-action headless) fails before mirroring.
+	if err := validateThenActions(profile, profileName, thenActions); err != nil {
+		return err
+	}
+	if err := precheckActionsConfirm(profile, thenActions, mirrorYes || noInput); err != nil {
+		return err
 	}
 
 	branch, err := resolveBranch(mirrorBranch)
@@ -236,6 +247,8 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
 
+	actions, actErr := executeActions(client, profile, profileName, thenActions, mirrorYes || noInput)
+
 	res := mirrorResult{
 		Command:     "mirror",
 		Target:      targetOf(profile),
@@ -245,9 +258,10 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		Commits:     reflectedShorts(commits, chosen.SHA),
 		FastForward: fastForward,
 		Forced:      forced,
+		Actions:     actions,
 	}
 	emit(res, func() { printMirrorSummary(res) })
-	return nil
+	return actErr
 }
 
 // mirrorCommitDiffLoader renders a commit's full diff for the target picker's

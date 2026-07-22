@@ -46,6 +46,8 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport sync [profile]` | Upload changed tracked files. `-u` also includes untracked files |
 | `teleport beam [profile]` | Send selected local commits to the remote (cherry-pick style) |
 | `teleport mirror [profile]` | Advance the remote branch to your local commits (same hash + message) via `git bundle`. `-a` to HEAD, `-c` clean first, `-f` force |
+| `teleport run <action>... [profile]` | Run a profile's remote action(s), streaming their logs. `--list` shows them |
+| `teleport actions add/list/edit/remove` | Manage a profile's remote actions (interactive wizard or flags) |
 | `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
@@ -253,6 +255,53 @@ hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and no teleport
 process lingers while you're connected. The host is resolved by `ssh` itself
 from `~/.ssh/config`.
 
+## Actions — automate remote processes
+
+An **action** is a named sequence of remote commands attached to a profile —
+`deploy`, `restart`, `logs`, whatever your box needs after a push. Actions run
+over SSH on the profile's host and are **not tied to the profile's directory**:
+each one declares its own working directory (or none, for commands like
+`systemctl`). The output of each step is **streamed back line by line** so you
+watch the process live.
+
+Define one with the interactive wizard (name → steps → working directory via the
+remote dir browser → options → "test now, then save"):
+
+```sh
+teleport actions add            # wizard on the default profile
+teleport actions list           # show the profile's actions
+teleport actions edit deploy    # re-open the wizard, pre-filled
+teleport actions remove deploy
+```
+
+Or write them straight into `~/.config/teleport/config.toml`:
+
+```toml
+[profiles.staging.actions.deploy]
+run = [
+  "composer install --no-dev",
+  "php artisan migrate --force",
+  "sudo systemctl restart app.service",
+]
+cwd = "/var/www/app"   # optional; defaults to the profile path; "" = no cd
+timeout = "5m"         # optional; per step; default 10m
+confirm = true         # optional; prompt before running
+```
+
+Run them standalone, or chain them after a transfer with `--then`/`-t` (they
+run only if the transfer succeeded, over the same connection):
+
+```sh
+teleport run deploy                     # stream the logs live
+teleport run deploy logs staging        # several actions, explicit profile
+teleport sync --then deploy             # sync, then deploy
+teleport mirror -a --then deploy --then logs   # mirror, then deploy, then tail
+```
+
+The first step that exits non-zero aborts the action (and the chain). Under
+`--json` the logs go to stderr and the result nests an `actions` array; headless,
+an action with `confirm = true` needs `-y` or it fails closed (exit `2`).
+
 ## Scripting (headless)
 
 Every command runs without a terminal, for CI and deploy pipelines. Two
@@ -270,6 +319,7 @@ teleport status --json          # {"target":…,"in_sync":false,"total":146,"dri
 teleport beam -a --no-input     # send unsent commits, no picker (exit 2 if -a is missing)
 teleport mirror -a --no-input   # advance the remote to HEAD, unattended
 teleport clean --no-input       # --no-input implies -y; never discards without an explicit opt-in
+teleport mirror -a --then deploy --no-input --json   # mirror + run 'deploy', logs on stderr
 ```
 
 Exit codes: `0` success / in sync · `1` execution error, or drift detected by

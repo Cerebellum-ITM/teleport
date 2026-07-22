@@ -161,6 +161,18 @@ App-wide rules every TUI must follow:
 - Binary blobs show a `「binary file · N bytes」` placeholder; empty content shows `「empty」`.
 - Keys: `j/k ↑/↓` scroll, `ctrl+d/ctrl+u` half-page, `g/G` top/bottom, `tab` switch file⇄diff, `esc`/`q` back, `ctrl+c` quit.
 
+### Action Runner (`internal/tui/actionrunner.go`)
+
+Streaming printer for `teleport run` / `--then` (not a bubbletea program, so long
+logs keep their natural scrollback). `ActionSink` prints as lines arrive: a
+header bar (`HeaderBg`/`HeaderFg`), a per-step marker `▸ step i/n` in `Gold`
+with the command dimmed (`TextFaint`), each output line indented (`stdout` in
+`Text`, `stderr` in `Warn`), and a `✓`/`✗` close per step (`Success`/`Danger`)
+with the elapsed time dim. A rich sink colors to stdout when `useTUI()`; a plain
+sink writes uncolored `[name]`-prefixed lines to stderr (headless / `--json`).
+`RunActionConfirm` is a minimal y/n bubbletea model for `confirm = true` actions,
+matching the clean-confirm key scheme (`y`/`enter` run, `n`/`esc`/`q` skip).
+
 ## Layout Notes
 
 - No full-screen takeover except during TUI programs (bubbletea handles the alternate screen).

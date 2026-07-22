@@ -17,8 +17,46 @@ const (
 )
 
 type Profile struct {
-	Host string `toml:"host"`
-	Path string `toml:"path"`
+	Host    string            `toml:"host"`
+	Path    string            `toml:"path"`
+	Actions map[string]Action `toml:"actions,omitempty"`
+}
+
+// Action is a named remote command sequence attached to a profile. Its steps
+// run in order over the profile's SSH host; the first non-zero step aborts the
+// action. Cwd is a pointer so three states are distinguishable: nil = use the
+// profile path, "" = run with no `cd`, any other value = that directory.
+type Action struct {
+	Run     []string `toml:"run"`
+	Cwd     *string  `toml:"cwd,omitempty"`
+	Timeout string   `toml:"timeout,omitempty"`
+	Confirm bool     `toml:"confirm,omitempty"`
+}
+
+const defaultActionTimeout = 10 * time.Minute
+
+// EffectiveCwd returns the directory a step should run in: the explicit Cwd
+// when set (including the empty string, meaning "no cd"), otherwise the
+// profile path.
+func (a Action) EffectiveCwd(profilePath string) string {
+	if a.Cwd != nil {
+		return *a.Cwd
+	}
+	return profilePath
+}
+
+// EffectiveTimeout parses Timeout, falling back to the 10m default when unset
+// or unparseable (validation on load rejects malformed values, so the fallback
+// is only reached for a truly empty field).
+func (a Action) EffectiveTimeout() time.Duration {
+	if a.Timeout == "" {
+		return defaultActionTimeout
+	}
+	d, err := time.ParseDuration(a.Timeout)
+	if err != nil || d <= 0 {
+		return defaultActionTimeout
+	}
+	return d
 }
 
 // BinProfile describes the destination for `teleport ship` for a given
@@ -88,6 +126,18 @@ func LoadGlobal() (*GlobalConfig, error) {
 	for k := range cfg.BinProfiles {
 		if !bindetect.Valid(k) {
 			return nil, fmt.Errorf("unknown bin profile OS %q (expected linux|macos|windows)", k)
+		}
+	}
+	for name, p := range cfg.Profiles {
+		for aname, a := range p.Actions {
+			if len(a.Run) == 0 {
+				return nil, fmt.Errorf("profile %q action %q: at least one `run` step is required", name, aname)
+			}
+			if a.Timeout != "" {
+				if _, err := time.ParseDuration(a.Timeout); err != nil {
+					return nil, fmt.Errorf("profile %q action %q: invalid timeout %q: %w", name, aname, a.Timeout, err)
+				}
+			}
 		}
 	}
 	return cfg, nil
@@ -234,6 +284,30 @@ func (g *GlobalConfig) SetProfile(name string, p Profile) {
 
 func (g *GlobalConfig) RemoveProfile(name string) {
 	delete(g.Profiles, name)
+}
+
+// SetAction stores action a under name on the named profile. It is a no-op
+// when the profile does not exist (callers validate the profile first).
+func (g *GlobalConfig) SetAction(profile, name string, a Action) {
+	p, ok := g.Profiles[profile]
+	if !ok {
+		return
+	}
+	if p.Actions == nil {
+		p.Actions = make(map[string]Action)
+	}
+	p.Actions[name] = a
+	g.Profiles[profile] = p
+}
+
+// RemoveAction deletes the named action from the profile, if present.
+func (g *GlobalConfig) RemoveAction(profile, name string) {
+	p, ok := g.Profiles[profile]
+	if !ok {
+		return
+	}
+	delete(p.Actions, name)
+	g.Profiles[profile] = p
 }
 
 func (g *GlobalConfig) SetBinProfile(os string, p BinProfile) {

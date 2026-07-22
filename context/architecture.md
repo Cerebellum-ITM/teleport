@@ -68,6 +68,35 @@ per-profile state — the remote HEAD is re-read each run as the source of truth
 - The persistent `--json` flag makes each command print one JSON result object to `stdout` and route all decoration/progress to `stderr`. `useTUI()` (`interactive() && !jsonOut`) gates the rich progress views; the plain stderr uploaders in `internal/tui` (`RunSyncPlain`/`RunBeamSendPlain`) are used otherwise so `stdout` stays a clean, parseable object.
 - **Exit-code contract:** `0` = success / in sync; `1` = execution error, or drift detected by `status`; `2` = a selection or confirmation could not be resolved from flags without a TTY (`ErrNeedsTTY`). `cmd.Execute` maps errors to this contract and reports them (JSON on stderr under `--json`).
 
+## Actions (Unit 23)
+
+An **action** is a named, ordered sequence of remote commands attached to a
+profile in the global config (`[profiles.<name>.actions.<action>]`): `Run []string`,
+optional `Cwd *string` (nil = profile path, `""` = no `cd`, else that directory),
+optional `Timeout` (Go duration, per step, default 10m), and `Confirm bool`.
+Actions run over the profile's SSH host and are **not tied to the profile path** —
+each declares its own working directory. Invoke them standalone (`teleport run
+<action>...`) or chain them after a successful transfer (`sync`/`beam`/`mirror`
+`--then <action>`), reusing the transfer's open connection.
+
+- **Streaming.** `ssh.Client.RunCommandStream(ctx, cmd, onLine)` runs one step on
+  a fresh session, delivering each stdout/stderr line to `onLine` as it arrives
+  (two `bufio.Scanner` goroutines, serialized; **no PTY**, so output stays clean
+  and parseable). It returns the remote exit code; a non-zero exit is reported via
+  the code, not an error (err is non-nil only for session/transport/timeout). The
+  presentation lives in `internal/tui.ActionSink`, a streaming printer (not a
+  bubbletea program): colored to stdout when `useTUI()`, else uncolored `[name]`-
+  prefixed lines to stderr — so `--json` keeps stdout clean and headless callers
+  still see the logs. The SSH I/O stays in `cmd/` (invariant #3).
+- **Invariant: an action's steps run in order; the first non-zero step aborts the
+  action** (and, under `--then`, the chain), and the command exits `1`. A transfer
+  that succeeds but whose `--then` action fails nests the per-action result in the
+  command's JSON so callers distinguish "shipped but didn't deploy".
+- **Invariant: `--then` action names are validated against the profile before the
+  transfer starts** (a typo, or a headless `confirm`-action without `-y`, fails
+  before anything is uploaded). `Confirm` follows the `clean` rule: interactive
+  prompts; headless auto-confirms only with `-y`/`--no-input`, else `ErrNeedsTTY`.
+
 ## Invariants
 
 1. `internal/` packages must never import `cmd/` — dependency flow is strictly `cmd → internal`.

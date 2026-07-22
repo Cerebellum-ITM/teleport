@@ -22,6 +22,7 @@ var syncCmd = &cobra.Command{
 
 func init() {
 	syncCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, "also sync untracked files")
+	registerThenFlag(syncCmd)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -77,6 +78,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Validate --then actions before uploading so a typo (or an un-confirmable
+	// confirm-action headless) fails fast.
+	if err := validateThenActions(profile, profileName, thenActions); err != nil {
+		return err
+	}
+	if err := precheckActionsConfirm(profile, thenActions, noInput); err != nil {
+		return err
+	}
+
 	client, err := connectToProfile(profile)
 	if err != nil {
 		return err
@@ -109,22 +119,26 @@ func runSync(cmd *cobra.Command, args []string) error {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
 
+	actions, actErr := executeActions(client, profile, profileName, thenActions, noInput)
+
 	res := syncResult{
 		Command: "sync",
 		Target:  fmt.Sprintf("%s:%s", profile.Host, profile.Path),
 		Sent:    len(changed),
 		Files:   changed,
+		Actions: actions,
 	}
 	emit(res, func() {}) // human path already printed progress inline
-	return nil
+	return actErr
 }
 
 // syncResult is the --json shape for sync.
 type syncResult struct {
-	Command string   `json:"command"`
-	Target  string   `json:"target"`
-	Sent    int      `json:"sent"`
-	Files   []string `json:"files"`
+	Command string         `json:"command"`
+	Target  string         `json:"target"`
+	Sent    int            `json:"sent"`
+	Files   []string       `json:"files"`
+	Actions []actionResult `json:"actions,omitempty"`
 }
 
 func dedupe(files []string) []string {

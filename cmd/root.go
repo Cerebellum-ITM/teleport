@@ -95,4 +95,6 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(mirrorCmd)
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(actionsCmd)
 }

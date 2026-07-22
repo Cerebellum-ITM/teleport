@@ -40,6 +40,7 @@ func init() {
 	beamCmd.Flags().BoolVarP(&beamYes, "yes", "y", false, "skip the clean confirmation prompt")
 	beamCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "skip the commit picker; auto-select commits not yet sent and go straight to file review")
 	beamCmd.Flags().StringArrayVarP(&beamCommits, "commit", "C", nil, "send exactly this commit (repeatable); skips the picker")
+	registerThenFlag(beamCmd)
 }
 
 func runBeam(cmd *cobra.Command, args []string) error {
@@ -66,6 +67,15 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	// equally explicit headless path.
 	if !interactive() && !beamAuto && len(beamCommits) == 0 {
 		return errNeedsTTY("pass -a (unsent commits) or --commit <sha> (explicit commits)")
+	}
+
+	// Validate --then actions up front so a typo (or an un-confirmable
+	// confirm-action headless) fails before anything is sent.
+	if err := validateThenActions(profile, profileName, thenActions); err != nil {
+		return err
+	}
+	if err := precheckActionsConfirm(profile, thenActions, beamYes || noInput); err != nil {
+		return err
 	}
 
 	// If --clean is set, connect now and run the clean phase before
@@ -295,6 +305,8 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
 
+	actions, actErr := executeActions(client, profile, profileName, thenActions, beamYes || noInput)
+
 	sentFiles := make([]string, 0, len(changes))
 	for _, c := range changes {
 		if !failedPaths[c.Path] {
@@ -311,18 +323,20 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		Commits: shortSHAs,
 		Sent:    len(sentFiles),
 		Files:   sentFiles,
+		Actions: actions,
 	}
 	emit(res, func() {}) // human path already printed progress + summary inline
-	return nil
+	return actErr
 }
 
 // beamResult is the --json shape for beam.
 type beamResult struct {
-	Command string   `json:"command"`
-	Target  string   `json:"target"`
-	Commits []string `json:"commits"`
-	Sent    int      `json:"sent"`
-	Files   []string `json:"files"`
+	Command string         `json:"command"`
+	Target  string         `json:"target"`
+	Commits []string       `json:"commits"`
+	Sent    int            `json:"sent"`
+	Files   []string       `json:"files"`
+	Actions []actionResult `json:"actions,omitempty"`
 }
 
 func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntracked bool) error {

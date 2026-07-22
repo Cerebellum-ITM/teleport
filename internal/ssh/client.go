@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -473,6 +475,89 @@ func (c *Client) RunCommand(cmd string) (string, error) {
 		return stdout.String(), err
 	}
 	return stdout.String(), nil
+}
+
+// Source identifies which stream a streamed line came from.
+type Source int
+
+const (
+	SourceStdout Source = iota
+	SourceStderr
+)
+
+// RunCommandStream executes cmd on a fresh SSH session and delivers each
+// stdout/stderr line to onLine as it arrives. It returns the remote exit code
+// (0 on success); a non-zero exit is reported via the code, not as an error —
+// err is non-nil only for session/transport/timeout failures. ctx cancels the
+// session: on ctx.Done the session is closed, which unblocks the readers and
+// surfaces as a non-nil error. onLine is never called concurrently.
+func (c *Client) RunCommandStream(ctx context.Context, cmd string, onLine func(src Source, line string)) (int, error) {
+	sess, err := c.ssh.NewSession()
+	if err != nil {
+		return -1, fmt.Errorf("ssh session: %w", err)
+	}
+	defer sess.Close()
+
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		return -1, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := sess.StderrPipe()
+	if err != nil {
+		return -1, fmt.Errorf("stderr pipe: %w", err)
+	}
+
+	if err := sess.Start(cmd); err != nil {
+		return -1, fmt.Errorf("start command: %w", err)
+	}
+
+	// Serialize onLine across both reader goroutines so the callback (and the
+	// caller's rendering) never sees interleaved calls.
+	var mu sync.Mutex
+	emit := func(src Source, line string) {
+		mu.Lock()
+		onLine(src, line)
+		mu.Unlock()
+	}
+
+	var wg sync.WaitGroup
+	scan := func(r io.Reader, src Source) {
+		defer wg.Done()
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for sc.Scan() {
+			emit(src, sc.Text())
+		}
+	}
+	wg.Add(2)
+	go scan(stdout, SourceStdout)
+	go scan(stderr, SourceStderr)
+
+	// Close the session when the context is cancelled, unblocking the readers.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			sess.Close()
+		case <-done:
+		}
+	}()
+
+	wg.Wait()
+	waitErr := sess.Wait()
+
+	if ctx.Err() != nil {
+		return -1, ctx.Err()
+	}
+	if waitErr != nil {
+		var ee *ssh.ExitError
+		if errors.As(waitErr, &ee) {
+			return ee.ExitStatus(), nil
+		}
+		return -1, waitErr
+	}
+	return 0, nil
 }
 
 // DownloadFile copies remotePath from the SFTP server to localPath,
