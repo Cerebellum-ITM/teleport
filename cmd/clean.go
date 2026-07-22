@@ -55,22 +55,52 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	counts, err := cleanRemote(client, profile, cleanYes, cleanIgnored)
+	// --no-input implies -y: headless never discards without an explicit
+	// confirmation, but a scripted run may opt in with either flag.
+	autoConfirm := cleanYes || noInput
+	counts, err := cleanRemote(client, profile, autoConfirm, cleanIgnored)
 	if err != nil {
 		return err
 	}
 	if counts.Skipped {
-		fmt.Println("aborted, no changes made")
+		emit(cleanJSON(profile, counts), func() {
+			fmt.Println("aborted, no changes made")
+		})
 		return nil
 	}
+	if err := config.TouchLastSync(); err != nil {
+		log.Warn("could not update last sync timestamp", "err", err)
+	}
+	emit(cleanJSON(profile, counts), func() { printCleanSummary(profile, counts) })
+	return nil
+}
+
+// cleanResult is the --json shape for clean (and the clean phase of beam -c).
+type cleanResult struct {
+	Command        string `json:"command"`
+	Target         string `json:"target"`
+	Reverted       int    `json:"reverted"`
+	Removed        int    `json:"removed"`
+	Restored       int    `json:"restored"`
+	RemovedIgnored int    `json:"removed_ignored"`
+}
+
+func cleanJSON(profile config.Profile, c cleanCounts) cleanResult {
+	return cleanResult{
+		Command:        "clean",
+		Target:         fmt.Sprintf("%s:%s", profile.Host, profile.Path),
+		Reverted:       c.Reverted,
+		Removed:        c.Removed,
+		Restored:       c.Restored,
+		RemovedIgnored: c.RemovedIgnored,
+	}
+}
+
+func printCleanSummary(profile config.Profile, counts cleanCounts) {
 	if counts.Reverted+counts.Removed+counts.Restored+counts.RemovedIgnored == 0 {
 		// already-clean message printed inside cleanRemote
-		if err := config.TouchLastSync(); err != nil {
-			log.Warn("could not update last sync timestamp", "err", err)
-		}
-		return nil
+		return
 	}
-
 	fmt.Println(cleanOKStyle.Render(fmt.Sprintf("✓ cleaned %s:%s", profile.Host, profile.Path)))
 	if counts.Reverted > 0 {
 		fmt.Printf("  reverted: %d file(s)\n", counts.Reverted)
@@ -84,10 +114,6 @@ func runClean(cmd *cobra.Command, args []string) error {
 	if counts.RemovedIgnored > 0 {
 		fmt.Printf("  removed (ignored): %d file(s)\n", counts.RemovedIgnored)
 	}
-	if err := config.TouchLastSync(); err != nil {
-		log.Warn("could not update last sync timestamp", "err", err)
-	}
-	return nil
 }
 
 // resolveProfile loads local + global config and returns the resolved profile.
@@ -211,6 +237,11 @@ func cleanRemote(client *sshpkg.Client, profile config.Profile, assumeYes, inclu
 	}
 
 	if !assumeYes {
+		// Headless with nothing to auto-confirm must fail closed: never open
+		// the confirmation TUI (it would hang) and never discard silently.
+		if !interactive() {
+			return cleanCounts{}, errNeedsTTY("pass -y")
+		}
 		plan := tui.CleanPlan{
 			Host:      profile.Host,
 			RemoteDir: profile.Path,

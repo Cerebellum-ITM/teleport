@@ -178,6 +178,8 @@ func printHelp() {
 			{"-p", "--profiles", iconPerson, "list configured profiles"},
 			{"-b", "--beam", iconSync, "send selected local commits to the remote"},
 			{"-v", "--verbose", ' ', "verbose output"},
+			{"", "--no-input", iconSync, "never prompt; fail closed instead (exit 2)"},
+			{"", "--json", iconSync, "machine-readable result on stdout"},
 		},
 		Examples: [][]string{
 			{"teleport -s", "sync only modified files"},

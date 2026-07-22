@@ -84,9 +84,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	header := fmt.Sprintf("Syncing %d file(s) to %s:%s", len(changed), profile.Host, profile.Path)
-	failed, err := tui.RunSyncProgress(header, changed, func(localPath string) error {
+	upload := func(localPath string) error {
 		return client.UploadFile(localPath, filepath.Join(profile.Path, localPath))
-	})
+	}
+	var failed []string
+	if useTUI() {
+		failed, err = tui.RunSyncProgress(header, changed, upload)
+	} else {
+		failed, err = tui.RunSyncPlain(header, changed, upload)
+	}
 	if err != nil {
 		return err
 	}
@@ -102,7 +108,23 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err := config.TouchLastSync(); err != nil {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
+
+	res := syncResult{
+		Command: "sync",
+		Target:  fmt.Sprintf("%s:%s", profile.Host, profile.Path),
+		Sent:    len(changed),
+		Files:   changed,
+	}
+	emit(res, func() {}) // human path already printed progress inline
 	return nil
+}
+
+// syncResult is the --json shape for sync.
+type syncResult struct {
+	Command string   `json:"command"`
+	Target  string   `json:"target"`
+	Sent    int      `json:"sent"`
+	Files   []string `json:"files"`
 }
 
 func dedupe(files []string) []string {

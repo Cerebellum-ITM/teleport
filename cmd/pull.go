@@ -89,12 +89,22 @@ func runPull(_ *cobra.Command, args []string) error {
 		entries = append(entries, entry{xy: xy, path: path})
 	}
 
+	target := fmt.Sprintf("%s:%s", profile.Host, profile.Path)
 	if len(entries) == 0 {
-		fmt.Println("Already up to date.")
+		emit(pullResult{Command: "pull", Target: target, Pulled: 0, Files: []string{}}, func() {
+			fmt.Println("Already up to date.")
+		})
 		return nil
 	}
 
+	// Decoration goes to stderr under --json so stdout stays a clean object.
+	out := os.Stdout
+	if jsonOut {
+		out = os.Stderr
+	}
+
 	var failed int
+	files := make([]string, 0, len(entries))
 	for _, e := range entries {
 		local := e.path
 		remote := filepath.Join(profile.Path, e.path)
@@ -103,27 +113,39 @@ func runPull(_ *cobra.Command, args []string) error {
 		isDeleted := x == "D" || y == "D"
 		if isDeleted {
 			if err := os.Remove(local); err != nil && !os.IsNotExist(err) {
-				fmt.Printf("  %s %s  (%s)\n", pullFailStyle.Render("✗"), local, err)
+				fmt.Fprintf(out, "  %s %s  (%s)\n", pullFailStyle.Render("✗"), local, err)
 				failed++
 			} else {
-				fmt.Printf("  %s %s\n", pullDeleteStyle.Render("-"), local)
+				files = append(files, local)
+				fmt.Fprintf(out, "  %s %s\n", pullDeleteStyle.Render("-"), local)
 			}
 			continue
 		}
 
 		if err := client.DownloadFile(remote, local); err != nil {
-			fmt.Printf("  %s %s  (%s)\n", pullFailStyle.Render("✗"), local, err)
+			fmt.Fprintf(out, "  %s %s  (%s)\n", pullFailStyle.Render("✗"), local, err)
 			failed++
 		} else {
-			fmt.Printf("  %s %s\n", pullOKStyle.Render("✓"), local)
+			files = append(files, local)
+			fmt.Fprintf(out, "  %s %s\n", pullOKStyle.Render("✓"), local)
 		}
 	}
 
 	pulled := len(entries) - failed
-	fmt.Printf("\nPulled %d file(s) from %s:%s\n", pulled, profile.Host, profile.Path)
+	emit(pullResult{Command: "pull", Target: target, Pulled: pulled, Files: files}, func() {
+		fmt.Printf("\nPulled %d file(s) from %s:%s\n", pulled, profile.Host, profile.Path)
+	})
 
 	if failed > 0 {
 		return fmt.Errorf("%d file(s) failed", failed)
 	}
 	return nil
+}
+
+// pullResult is the --json shape for pull.
+type pullResult struct {
+	Command string   `json:"command"`
+	Target  string   `json:"target"`
+	Pulled  int      `json:"pulled"`
+	Files   []string `json:"files"`
 }

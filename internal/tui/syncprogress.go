@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -365,6 +366,37 @@ func RunBeamSendProgress(header string, groups []BeamGroup, upload func(string) 
 		files = append(files, g.Paths...)
 	}
 	return runSyncProgress(header, files, groups, upload)
+}
+
+// RunSyncPlain uploads each file without opening a TUI, writing one progress
+// line per file to stderr so stdout stays clean for --json. Used in headless
+// mode (no TTY or --no-input) where the bubbletea program must not run.
+func RunSyncPlain(header string, files []string, upload func(string) error) ([]string, error) {
+	return runPlain(header, files, upload)
+}
+
+// RunBeamSendPlain is the headless counterpart of RunBeamSendProgress: it
+// uploads every file across all groups in order, without a TUI.
+func RunBeamSendPlain(header string, groups []BeamGroup, upload func(string) error) ([]string, error) {
+	files := make([]string, 0)
+	for _, g := range groups {
+		files = append(files, g.Paths...)
+	}
+	return runPlain(header, files, upload)
+}
+
+func runPlain(header string, files []string, upload func(string) error) ([]string, error) {
+	fmt.Fprintf(os.Stderr, "%s\n", header)
+	var failed []string
+	for _, f := range files {
+		if err := upload(f); err != nil {
+			failed = append(failed, f)
+			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", f, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "  ✓ %s\n", f)
+		}
+	}
+	return failed, nil
 }
 
 func runSyncProgress(header string, files []string, groups []BeamGroup, upload func(string) error) ([]string, error) {

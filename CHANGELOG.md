@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Headless mode via a persistent `--no-input` flag.** Any command can now run without a TTY: `--no-input` (or simply not having a terminal on stdin, as in CI or when another process launches `teleport`) turns every prompt, picker, and viewer into a non-interactive path that either resolves from flags or **fails closed** with exit code `2` and a message naming the flag that was missing — it never hangs waiting for input. A single `interactive()` guard (real TTY on stdin *and* no `--no-input`) governs all TUI call sites. `teleport beam -a --no-input` sends the unsent commits end to end without opening the commit picker or the file-diff viewer; `teleport clean --no-input` implies `-y` (headless never discards without an explicit confirmation, so `clean` with no TTY and no `-y`/`--no-input` exits `2` and leaves the remote untouched); and, by design, `--no-input` does **not** silently imply `-a` for `beam` — headless without `-a` is an explicit error so unintended commits are never beamed. In a real terminal with no flags, `beam`/`clean` behave exactly as before.
+- **Machine-readable output via a persistent `--json` flag.** With `--json`, each command prints a single JSON result object to `stdout` and sends all decoration/progress to `stderr`, so callers parse instead of scraping ANSI. `status` emits `{target, in_sync, total, drift[]}` (with `state` ∈ `differ`/`missing_remote`/`missing_local`); `sync`/`beam` emit `{command, target, sent, files[]}` (`beam` also lists the `commits[]`); `clean` emits `{command, target, reverted, removed, restored, removed_ignored}`; `pull` emits `{command, target, pulled, files[]}`. A headless `ErrNeedsTTY` under `--json` is serialized as `{"error":…,"hint":…}` on `stderr` with exit `2`.
+- **Documented, stable exit codes:** `0` success / in sync, `1` execution error or drift detected (`status`), `2` a selection or confirmation could not be resolved from flags without a TTY.
+
 ## [0.8.0] - 2026-06-30
 
 ### Added

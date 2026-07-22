@@ -99,14 +99,54 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "\r\033[K")
 
-	printStatusReport(results, profile.Host, profile.Path)
-
+	target := fmt.Sprintf("%s:%s", profile.Host, profile.Path)
+	drift := make([]driftEntry, 0)
 	for _, r := range results {
-		if r.Marker != "==" {
-			os.Exit(1)
+		if r.Marker == "==" {
+			continue
 		}
+		drift = append(drift, driftEntry{Path: r.Path, State: driftState(r.Marker)})
+	}
+	inSync := len(drift) == 0
+
+	emit(statusJSON{
+		Target: target,
+		InSync: inSync,
+		Total:  len(results),
+		Drift:  drift,
+	}, func() { printStatusReport(results, profile.Host, profile.Path) })
+
+	if !inSync {
+		os.Exit(1)
 	}
 	return nil
+}
+
+// statusJSON is the --json shape for status.
+type statusJSON struct {
+	Target string       `json:"target"`
+	InSync bool         `json:"in_sync"`
+	Total  int          `json:"total"`
+	Drift  []driftEntry `json:"drift"`
+}
+
+type driftEntry struct {
+	Path  string `json:"path"`
+	State string `json:"state"`
+}
+
+// driftState maps a report marker to its stable JSON state name.
+func driftState(marker string) string {
+	switch marker {
+	case "!=":
+		return "differ"
+	case "??":
+		return "missing_remote"
+	case "--":
+		return "missing_local"
+	default:
+		return marker
+	}
 }
 
 func collectStatusTargets(includeUntracked bool) ([]statusTarget, error) {

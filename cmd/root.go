@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/charmbracelet/log"
@@ -12,6 +14,8 @@ var rootSync bool
 var rootInit bool
 var rootProfiles bool
 var rootBeam bool
+var noInput bool
+var jsonOut bool
 
 var rootCmd = &cobra.Command{
 	Use:   "teleport",
@@ -49,13 +53,33 @@ func Execute() {
 		}
 		cmd.Usage()
 	})
+	// We report errors ourselves so --json can serialize ErrNeedsTTY and so
+	// exit codes follow the documented contract (2 = would need a TTY).
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// exitCode maps an error to the documented exit contract and prints it:
+// 2 when a command would need a TTY it does not have, 1 otherwise.
+func exitCode(err error) int {
+	if errors.Is(err, ErrNeedsTTY) {
+		reportError(err)
+		if !jsonOut {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+		}
+		return 2
+	}
+	fmt.Fprintln(os.Stderr, "Error:", err)
+	return 1
 }
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "never prompt; resolve from flags or fail (exit 2)")
+	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "print a single JSON result object to stdout")
 	rootCmd.Flags().BoolVarP(&rootSync, "sync", "s", false, " sync changed files")
 	rootCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, " include untracked files (use with -s)")
 	rootCmd.Flags().BoolVarP(&rootInit, "init", "i", false, " configure a sync profile")

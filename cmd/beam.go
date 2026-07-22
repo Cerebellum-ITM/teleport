@@ -50,6 +50,13 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Headless beam must be explicit about what to send: --no-input does not
+	// silently imply -a (that would risk beaming unintended commits). Fail
+	// closed before touching the remote so nothing is sent.
+	if !interactive() && !beamAuto {
+		return errNeedsTTY("pass -a to auto-select unsent commits")
+	}
+
 	// If --clean is set, connect now and run the clean phase before
 	// anything else. The connection is reused by the beam phase.
 	var client *sshpkg.Client
@@ -63,7 +70,8 @@ func runBeam(cmd *cobra.Command, args []string) error {
 				client.Close()
 			}
 		}()
-		counts, err := cleanRemote(client, profile, beamYes, false)
+		// --no-input implies -y for the clean phase (same rule as `clean`).
+		counts, err := cleanRemote(client, profile, beamYes || noInput, false)
 		if err != nil {
 			return err
 		}
@@ -153,13 +161,20 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	changes, err := tui.RunBeamFilePicker(allChanges, selectedCommits, beamViewerLoader)
-	if err != nil {
-		return err
-	}
-	if len(changes) == 0 {
-		fmt.Println("No files selected.")
-		return nil
+	// The file-diff viewer (Unit 18) is visual review only: headless skips it
+	// and sends every changed path directly, without opening the tea.Program.
+	var changes []git.FileChange
+	if interactive() {
+		changes, err = tui.RunBeamFilePicker(allChanges, selectedCommits, beamViewerLoader)
+		if err != nil {
+			return err
+		}
+		if len(changes) == 0 {
+			fmt.Println("No files selected.")
+			return nil
+		}
+	} else {
+		changes = allChanges
 	}
 
 	if client == nil {
@@ -211,14 +226,20 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		}
 
 		header := fmt.Sprintf("Beaming %d file(s) to %s:%s", len(toUpload), profile.Host, profile.Path)
-		failed, err := tui.RunBeamSendProgress(header, groups, func(path string) error {
+		send := func(path string) error {
 			fc := byPath[path]
 			content, err := git.FileAtCommit(fc.SHA, fc.Path)
 			if err != nil {
 				return err
 			}
 			return client.UploadBytes(filepath.Join(profile.Path, fc.Path), content)
-		})
+		}
+		var failed []string
+		if useTUI() {
+			failed, err = tui.RunBeamSendProgress(header, groups, send)
+		} else {
+			failed, err = tui.RunBeamSendPlain(header, groups, send)
+		}
 		if err != nil {
 			return err
 		}
@@ -254,7 +275,35 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	if err := config.TouchLastSync(); err != nil {
 		log.Warn("could not update last sync timestamp", "err", err)
 	}
+
+	sentFiles := make([]string, 0, len(changes))
+	for _, c := range changes {
+		if !failedPaths[c.Path] {
+			sentFiles = append(sentFiles, c.Path)
+		}
+	}
+	shortSHAs := make([]string, 0, len(selectedCommits))
+	for _, c := range selectedCommits {
+		shortSHAs = append(shortSHAs, c.Short)
+	}
+	res := beamResult{
+		Command: "beam",
+		Target:  fmt.Sprintf("%s:%s", profile.Host, profile.Path),
+		Commits: shortSHAs,
+		Sent:    len(sentFiles),
+		Files:   sentFiles,
+	}
+	emit(res, func() {}) // human path already printed progress + summary inline
 	return nil
+}
+
+// beamResult is the --json shape for beam.
+type beamResult struct {
+	Command string   `json:"command"`
+	Target  string   `json:"target"`
+	Commits []string `json:"commits"`
+	Sent    int      `json:"sent"`
+	Files   []string `json:"files"`
 }
 
 func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntracked bool) error {
@@ -279,9 +328,15 @@ func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntrac
 	}
 
 	header := fmt.Sprintf("Syncing %d working-tree file(s) to %s:%s", len(changed), profile.Host, profile.Path)
-	failed, err := tui.RunSyncProgress(header, changed, func(localPath string) error {
+	upload := func(localPath string) error {
 		return client.UploadFile(localPath, filepath.Join(profile.Path, localPath))
-	})
+	}
+	var failed []string
+	if useTUI() {
+		failed, err = tui.RunSyncProgress(header, changed, upload)
+	} else {
+		failed, err = tui.RunSyncPlain(header, changed, upload)
+	}
 	if err != nil {
 		return err
 	}
@@ -353,6 +408,9 @@ func resolveBranch(explicit string) (string, error) {
 	}
 	if len(all) == 1 {
 		return current, nil
+	}
+	if !interactive() {
+		return "", errNeedsTTY("pass --branch to choose the source branch")
 	}
 	return tui.RunBranchPicker(all, current)
 }

@@ -36,6 +36,13 @@
 - Host key verification uses `~/.ssh/known_hosts` when present; falls back to `InsecureIgnoreHostKey` otherwise.
 - No user accounts, no tokens, no teleport-specific auth layer.
 
+## Headless Mode (Unit 19)
+
+- A single guard, `cmd.interactive()`, decides whether any TUI (prompt, picker, viewer, confirmation) may open: it returns true only when stdin is a real TTY **and** the persistent `--no-input` flag was not set. Every TUI call site consults it; no per-`Opts` boolean is threaded through.
+- **Invariant: no TTY (redirected stdin, CI, or `--no-input`) ⇒ never open a TUI.** Headless either resolves the selection/confirmation from flags or fails closed with `ErrNeedsTTY` (exit `2`), naming the missing flag in the error. It never blocks waiting for input.
+- The persistent `--json` flag makes each command print one JSON result object to `stdout` and route all decoration/progress to `stderr`. `useTUI()` (`interactive() && !jsonOut`) gates the rich progress views; the plain stderr uploaders in `internal/tui` (`RunSyncPlain`/`RunBeamSendPlain`) are used otherwise so `stdout` stays a clean, parseable object.
+- **Exit-code contract:** `0` = success / in sync; `1` = execution error, or drift detected by `status`; `2` = a selection or confirmation could not be resolved from flags without a TTY (`ErrNeedsTTY`). `cmd.Execute` maps errors to this contract and reports them (JSON on stderr under `--json`).
+
 ## Invariants
 
 1. `internal/` packages must never import `cmd/` — dependency flow is strictly `cmd → internal`.
