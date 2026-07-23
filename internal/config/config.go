@@ -80,6 +80,12 @@ type LocalConfig struct {
 	LastSync       time.Time `toml:"last_sync,omitempty"`
 	BinDir         string    `toml:"bin_dir,omitempty"`
 
+	// BinProfiles holds this project's `teleport ship` destinations, keyed by
+	// target OS (linux|macos|windows). Per-project so different repos can ship
+	// different binaries to different servers without interfering. Replaces the
+	// deprecated global [bin_profiles] section.
+	BinProfiles map[string]BinProfile `toml:"bin_profiles,omitempty"`
+
 	// BeamedCommits maps a profile name to the set of commit SHAs already
 	// beamed to that destination, with the time each was sent.
 	BeamedCommits map[string]map[string]time.Time `toml:"beamed_commits,omitempty"`
@@ -175,6 +181,11 @@ func LoadLocal() (*LocalConfig, error) {
 
 	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, fmt.Errorf("decode local config: %w", err)
+	}
+	for k := range cfg.BinProfiles {
+		if !bindetect.Valid(k) {
+			return nil, fmt.Errorf("unknown bin profile OS %q (expected linux|macos|windows)", k)
+		}
 	}
 	return cfg, nil
 }
@@ -310,6 +321,9 @@ func (g *GlobalConfig) RemoveAction(profile, name string) {
 	g.Profiles[profile] = p
 }
 
+// SetBinProfile on GlobalConfig is retained only so the deprecated global
+// [bin_profiles] section can be read and cleared during migration. New bin
+// profiles are written per-project via LocalConfig.SetBinProfile.
 func (g *GlobalConfig) SetBinProfile(os string, p BinProfile) {
 	if g.BinProfiles == nil {
 		g.BinProfiles = make(map[string]BinProfile)
@@ -319,4 +333,17 @@ func (g *GlobalConfig) SetBinProfile(os string, p BinProfile) {
 
 func (g *GlobalConfig) RemoveBinProfile(os string) {
 	delete(g.BinProfiles, os)
+}
+
+// SetBinProfile stores this project's ship destination p under target OS os.
+func (c *LocalConfig) SetBinProfile(os string, p BinProfile) {
+	if c.BinProfiles == nil {
+		c.BinProfiles = make(map[string]BinProfile)
+	}
+	c.BinProfiles[os] = p
+}
+
+// RemoveBinProfile deletes the bin profile for target OS os, if present.
+func (c *LocalConfig) RemoveBinProfile(os string) {
+	delete(c.BinProfiles, os)
 }

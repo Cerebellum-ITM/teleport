@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- **`teleport ship` bin profiles are now per-project.** Previously a bin profile (host, remote `bin/` path, optional `remote_name` and `bin_file`) lived in the **global** config keyed only by target OS, so a machine could hold exactly one ship destination per OS across *all* repositories — the CLI's per-directory project model didn't reach `ship`. Bin profiles now live in the project's local config (`~/.config/teleport/projects/<hash>.toml`) under `[bin_profiles.<os>]`, so different repos can ship different binaries to different servers without interfering. `teleport init` writes them there, and `teleport profiles`/`teleport config get` display the project's own set. The global `[bin_profiles]` section is **deprecated**: it is no longer consulted for resolution, and the first interactive `ship`/`init` in a project without its own bin profiles offers to adopt the global entries (and optionally clear the global section). Non-interactive runs never prompt — they warn once and leave the deprecated section unused.
+
+### Fixed
+- **`teleport ship` no longer leaks one project's bin profile into every other repo.** Because the old global `bin_file` matched for any working directory, running `teleport ship` in an unrelated project would try to stat that other project's `bin_file` (failing, or shipping the wrong file), and the global `remote_name` would silently rename an explicitly-passed binary — overwriting a different project's remote binary via `mv -f`. With bin profiles scoped per project, resolution only ever sees the current repo's configuration.
+
 ## [0.9.0] - 2026-07-22
 
 ### Added

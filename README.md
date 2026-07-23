@@ -221,6 +221,12 @@ three steps (SFTP upload to `/tmp` → `chmod +x` → `mv` into place, with
 automatic `sudo` escalation when needed). The target OS is auto-detected from
 the binary's magic bytes (ELF → linux, Mach-O → macos, PE → windows).
 
+Bin profiles (host, remote `bin/` path, optional remote name and source file)
+are **per-project**: they live in this directory's local config, so different
+repos can ship different binaries to different servers. A pre-0.10 global
+`[bin_profiles]` section is deprecated — the first interactive `ship`/`init`
+offers to migrate it into the project.
+
 <p align="center">
   <img src="demo/gifs/ship.gif" alt="teleport ship: upload, rename, chmod, and move a binary into place" width="820">
 </p>
