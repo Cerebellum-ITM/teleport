@@ -280,6 +280,13 @@ teleport actions edit deploy    # re-open the wizard, pre-filled
 teleport actions remove deploy
 ```
 
+Or headless, naming the action with `--name` (the positional is the profile):
+
+```sh
+teleport actions add staging --no-input --name doctor \
+  --run "uname -m" --run "df -h ." --timeout 2m
+```
+
 Or write them straight into `~/.config/teleport/config.toml`:
 
 ```toml

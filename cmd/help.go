@@ -200,6 +200,7 @@ func printHelp() {
 			{"teleport run deploy", "run the 'deploy' action, streaming its logs"},
 			{"teleport mirror -a --then deploy", "mirror, then run 'deploy' on success"},
 			{"teleport actions add", "define a remote action via the wizard"},
+			{"teleport actions add --name doctor", "define one headless (with --run)"},
 			{"teleport clean", "discard dirty changes on the remote"},
 			{"teleport status -p", "verify pending work matches the remote"},
 			{"teleport config set sync-untracked true", "remember -u for this wd"},
