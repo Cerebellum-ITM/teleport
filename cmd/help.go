@@ -181,6 +181,7 @@ func printHelp() {
 			{"-i", "--init", iconGear, "configure a sync profile"},
 			{"-p", "--profiles", iconPerson, "list configured profiles"},
 			{"-b", "--beam", iconSync, "send selected local commits to the remote"},
+			{"", "--sh", iconGear, "open an interactive shell on the remote"},
 			{"-v", "--verbose", ' ', "verbose output"},
 			{"", "--no-input", iconSync, "never prompt; fail closed instead (exit 2)"},
 			{"", "--json", iconSync, "machine-readable result on stdout"},
@@ -206,6 +207,7 @@ func printHelp() {
 			{"teleport config set sync-untracked true", "remember -u for this wd"},
 			{"teleport ship ./mycli", "deploy a built binary to its OS bin/ dir"},
 			{"teleport shell", "ssh into the remote at the profile's path"},
+			{"teleport --sh", "shortcut for `teleport shell`"},
 		},
 	}
 

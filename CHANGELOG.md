@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`teleport --sh` shortcut for `teleport shell`.** A root-level boolean flag that dispatches to the existing interactive-shell command (Unit 16), so opening a remote shell no longer needs the full subcommand: `teleport --sh` uses the working directory's default profile and `teleport --sh <profile>` a named one. The remote shell stays `zsh`; this is only sugar over `teleport shell`, following the same root-dispatch pattern as `--sync`/`--init`/`--profiles`/`--beam`. It is `--sh` (long flag, no shorthand) rather than a single-dash `-sh` because cobra shorthands are one letter and `-s` is already `--sync` (so `-sh` would parse as sync + help).
+
 ### Changed
 - **`teleport ship` bin profiles are now per-project.** Previously a bin profile (host, remote `bin/` path, optional `remote_name` and `bin_file`) lived in the **global** config keyed only by target OS, so a machine could hold exactly one ship destination per OS across *all* repositories — the CLI's per-directory project model didn't reach `ship`. Bin profiles now live in the project's local config (`~/.config/teleport/projects/<hash>.toml`) under `[bin_profiles.<os>]`, so different repos can ship different binaries to different servers without interfering. `teleport init` writes them there, and `teleport profiles`/`teleport config get` display the project's own set. The global `[bin_profiles]` section is **deprecated**: it is no longer consulted for resolution, and the first interactive `ship`/`init` in a project without its own bin profiles offers to adopt the global entries (and optionally clear the global section). Non-interactive runs never prompt — they warn once and leave the deprecated section unused.
 

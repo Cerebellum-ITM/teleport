@@ -14,6 +14,7 @@ var rootSync bool
 var rootInit bool
 var rootProfiles bool
 var rootBeam bool
+var rootShell bool
 var noInput bool
 var jsonOut bool
 
@@ -38,6 +39,8 @@ history clean of post-deploy fix commits.`,
 			return runProfiles(cmd, args)
 		case rootBeam:
 			return runBeam(cmd, args)
+		case rootShell:
+			return runShell(cmd, args)
 		default:
 			printHelp()
 			return nil
@@ -86,6 +89,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&rootProfiles, "profiles", "p", false, " list configured profiles")
 	rootCmd.Flags().BoolVarP(&rootBeam, "beam", "b", false, "󰜘 send selected local commits to the remote server")
 	rootCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "with -b: auto-select commits not yet sent, skip the commit picker")
+	rootCmd.Flags().BoolVar(&rootShell, "sh", false, " open an interactive shell on the remote")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(profilesCmd)
