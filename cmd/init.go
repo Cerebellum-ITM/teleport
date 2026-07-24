@@ -152,6 +152,17 @@ func pickInitTargets() ([]string, error) {
 	return picks, nil
 }
 
+// projectDirName returns the basename of the current working directory, used as
+// the default remote folder name offered by the dir picker's ctrl+n key. Empty
+// when the cwd can't be determined (disables the key).
+func projectDirName() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(cwd)
+}
+
 func binTargetOS(target string) (string, bool) {
 	switch target {
 	case initTargetBinLinux:
@@ -211,7 +222,7 @@ func configureSyncProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host) e
 	defer client.Close()
 	log.Info("Connected", "host", host.Name)
 
-	remotePath, err := tui.RunDirPickerWith(client, "/", "  Select sync directory")
+	remotePath, err := tui.RunDirPickerNew(client, "/", "  Select sync directory", projectDirName())
 	if err != nil {
 		return err
 	}
@@ -255,7 +266,7 @@ func configureBinProfile(localCfg *config.LocalConfig, hosts []sshpkg.Host, osNa
 		startPath = "/"
 	}
 	header := fmt.Sprintf("  Select bin/ directory for %s", osName)
-	binPath, err := tui.RunDirPickerWith(client, startPath, header)
+	binPath, err := tui.RunDirPickerNew(client, startPath, header, projectDirName())
 	if err != nil {
 		return err
 	}

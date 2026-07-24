@@ -24,6 +24,10 @@ type listDirsMsg struct {
 
 type listDirsErrMsg struct{ err error }
 
+type mkdirDoneMsg struct{ path string }
+
+type mkdirErrMsg struct{ err error }
+
 func listDirsCmd(client *sshpkg.Client, path string) tea.Cmd {
 	return func() tea.Msg {
 		dirs, err := client.ListDirs(path)
@@ -34,18 +38,28 @@ func listDirsCmd(client *sshpkg.Client, path string) tea.Cmd {
 	}
 }
 
+func mkdirCmd(client *sshpkg.Client, path string) tea.Cmd {
+	return func() tea.Msg {
+		if err := client.Mkdir(path); err != nil {
+			return mkdirErrMsg{err}
+		}
+		return mkdirDoneMsg{path}
+	}
+}
+
 type DirPicker struct {
-	client   *sshpkg.Client
-	cwd      string
-	header   string
-	dirs     []string
-	filter   textinput.Model
-	cursor   int
-	height   int
-	chosen   string
-	quitting bool
-	loading  bool
-	err      error
+	client     *sshpkg.Client
+	cwd        string
+	header     string
+	newDirName string
+	dirs       []string
+	filter     textinput.Model
+	cursor     int
+	height     int
+	chosen     string
+	quitting   bool
+	loading    bool
+	err        error
 }
 
 var (
@@ -72,6 +86,13 @@ func NewDirPickerWith(client *sshpkg.Client, startPath, header string) DirPicker
 		filter:  fi,
 		height:  24,
 	}
+}
+
+// WithNewDir sets the folder name offered by the ctrl+n "create folder" key.
+// An empty name (the default) disables the key and hides its footer hint.
+func (m DirPicker) WithNewDir(name string) DirPicker {
+	m.newDirName = name
+	return m
 }
 
 func (m DirPicker) Init() tea.Cmd {
@@ -110,6 +131,19 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 
+	case mkdirDoneMsg:
+		// Descend into the freshly-created (or already-existing) folder so
+		// enter confirms it.
+		m.cwd = msg.path
+		m.cursor = 0
+		m.filter.SetValue("")
+		return m, listDirsCmd(m.client, m.cwd)
+
+	case mkdirErrMsg:
+		m.loading = false
+		m.err = msg.err
+		return m, nil
+
 	case tea.KeyPressMsg:
 		visible := m.filteredDirs()
 
@@ -132,6 +166,16 @@ func (m DirPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			if m.cursor < len(visible)-1 {
 				m.cursor++
+			}
+			return m, nil
+
+		case "ctrl+n":
+			// Create a subfolder named after the local project, then descend
+			// into it. Inert when no name was provided.
+			if m.newDirName != "" {
+				target := filepath.Join(m.cwd, m.newDirName)
+				m.loading = true
+				return m, mkdirCmd(m.client, target)
 			}
 			return m, nil
 
@@ -242,7 +286,11 @@ func (m DirPicker) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("  ↑/↓ navigate  tab/→=descend  shift+tab/←=up  enter=select  esc=clear filter  q=quit") + "\n")
+	help := "  ↑/↓ navigate  tab/→=descend  shift+tab/←=up  enter=select  esc=clear filter  q=quit"
+	if m.newDirName != "" {
+		help += "  ctrl+n=new " + m.newDirName
+	}
+	b.WriteString(dimStyle.Render(help) + "\n")
 	b.WriteString(selectedStyle.Render("  Selected: "+m.cwd) + "\n")
 
 	return tea.NewView(b.String())
@@ -253,7 +301,13 @@ func RunDirPicker(client *sshpkg.Client, startPath string) (string, error) {
 }
 
 func RunDirPickerWith(client *sshpkg.Client, startPath, header string) (string, error) {
-	p := tea.NewProgram(NewDirPickerWith(client, startPath, header))
+	return RunDirPickerNew(client, startPath, header, "")
+}
+
+// RunDirPickerNew is RunDirPickerWith plus a ctrl+n "create folder" key that
+// makes a remote subfolder named newDirName (empty disables the key).
+func RunDirPickerNew(client *sshpkg.Client, startPath, header, newDirName string) (string, error) {
+	p := tea.NewProgram(NewDirPickerWith(client, startPath, header).WithNewDir(newDirName))
 	m, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("dir picker: %w", err)

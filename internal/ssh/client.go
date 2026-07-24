@@ -293,6 +293,19 @@ func (c *Client) ListDirs(path string) ([]string, error) {
 	return dirs, nil
 }
 
+// Mkdir creates dir on the remote. It is idempotent: an already-existing
+// directory is not an error. Parent directories must already exist.
+func (c *Client) Mkdir(dir string) error {
+	if err := c.SFTP.Mkdir(dir); err != nil {
+		// Tolerate "already exists": re-stat and accept if it is a dir.
+		if info, statErr := c.SFTP.Stat(dir); statErr == nil && info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("mkdir remote %s: %w", dir, err)
+	}
+	return nil
+}
+
 func (c *Client) UploadFile(localPath, remotePath string) error {
 	src, err := os.Open(localPath)
 	if err != nil {
