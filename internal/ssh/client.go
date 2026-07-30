@@ -306,6 +306,24 @@ func (c *Client) Mkdir(dir string) error {
 	return nil
 }
 
+// MkdirAll creates dir and any missing parent directories on the remote.
+func (c *Client) MkdirAll(dir string) error {
+	if err := c.SFTP.MkdirAll(dir); err != nil {
+		return fmt.Errorf("mkdir remote %s: %w", dir, err)
+	}
+	return nil
+}
+
+// Chmod sets the mode of remotePath. Needed because SFTP.Create keeps the mode
+// of an already-existing remote file, so an overwrite would otherwise inherit a
+// stale mode.
+func (c *Client) Chmod(remotePath string, mode os.FileMode) error {
+	if err := c.SFTP.Chmod(remotePath, mode); err != nil {
+		return fmt.Errorf("chmod remote %s: %w", remotePath, err)
+	}
+	return nil
+}
+
 func (c *Client) UploadFile(localPath, remotePath string) error {
 	src, err := os.Open(localPath)
 	if err != nil {

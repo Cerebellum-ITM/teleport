@@ -61,6 +61,29 @@ remote; the sole non-fast-forward path is an explicit `--force` (`reset --hard`)
 behind a confirmation (auto-confirmed only by `-y`/`--no-input`). It keeps no
 per-profile state — the remote HEAD is re-read each run as the source of truth.
 
+## `push` — git-agnostic transfer (Unit 28)
+
+`push` is the only transfer command that does **not** consult git: it uploads the
+paths it is given, so gitignored build output can reach the remote (`sync -u`
+enumerates with `--exclude-standard` and skips ignored paths silently; `beam`/
+`mirror` carry only what git has; `ship` accepts executables only). It is the
+explicit escape hatch — `sync` is not taught to include ignored files, and
+`ship`'s magic-byte validation is not relaxed.
+
+- Destination resolution is a pure function (`cmd.resolvePushDest`) over the
+  profile path; the local reference point is the **current working directory**,
+  never the git root (push must not call git at all).
+- **Invariant: `push` never writes outside the profile's resolved `path`.** `--to`
+  is relative-only (absolute values rejected) and every destination is
+  `path.Clean`ed and containment-checked against the profile path, so no `..`
+  escape reaches the remote. Remote paths use `path`, local paths `filepath`.
+- **Invariant: collection completes before the first byte is uploaded.** A missing
+  path, broken symlink, symlink cycle or unsupported file type aborts with an
+  untouched remote. Symlinks are followed; nothing is skipped silently.
+- No deletion in v1 (no rsync-style `--delete`): clean replacement is
+  push-to-new-directory plus a swap in a `--then` action. `push` does not touch
+  `last_sync`, which describes git parity.
+
 ## Headless Mode (Unit 19)
 
 - A single guard, `cmd.interactive()`, decides whether any TUI (prompt, picker, viewer, confirmation) may open: it returns true only when stdin is a real TTY **and** the persistent `--no-input` flag was not set. Every TUI call site consults it; no per-`Opts` boolean is threaded through.

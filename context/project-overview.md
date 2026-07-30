@@ -41,6 +41,10 @@ credentials configuration is required.
 - Multi-select TUI to toggle untracked files in/out of the sync set
 - Per-file success/failure log with Nerd Font icons
 - Remote directories created automatically (MkdirAll) if they don't exist
+- `teleport push <path>... [profile]` — upload arbitrary paths as-is, ignoring git
+  entirely (the only way to send gitignored build output); `--to` destination
+  confined to the profile path, recursive directories, `--dry-run`, `--checksum`,
+  `--then`
 
 ### SSH / SFTP
 
@@ -53,6 +57,7 @@ credentials configuration is required.
 ### In Scope
 
 - Sync git-tracked files + optional untracked extras
+- Upload arbitrary (including gitignored) paths via `push`, confined to the profile path
 - Interactive profile setup (host picker, remote dir browser)
 - Multiple named profiles, one default per project
 - SSH public-key auth only (agent + key files)

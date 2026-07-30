@@ -25,7 +25,7 @@ teleport sync      # upload changed files → iterate → commit clean
    with a live progress bar. Add `-u` to include untracked files too.
 4. Iterate until satisfied, then commit cleanly.
 
-## Three ways to ship code
+## Four ways to ship code
 
 - **`sync`** — pushes your *working-tree* changes (everything modified since
   `HEAD`). Fast, dirty, throwaway: perfect for the edit-test-edit loop.
@@ -37,6 +37,10 @@ teleport sync      # upload changed files → iterate → commit clean
   **same hash and message** (transfers git *objects*, not file contents). The
   remote ends clean at the new HEAD, its `git log` matching yours. Use it when
   the box runs from a git checkout and you want it in lockstep with local git.
+- **`push`** — pushes *the paths you name*, exactly as given, **without asking
+  git anything**. The escape hatch for build output and artifacts that
+  `.gitignore` hides (`web/dist`, `target/release`, a `.env` the repo never
+  tracks) — the only transfer command that can send them.
 
 ## Commands
 
@@ -50,6 +54,7 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport actions add/list/edit/remove` | Manage a profile's remote actions (interactive wizard or flags) |
 | `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
+| `teleport push <path>... [profile]` | Upload the given paths as-is, ignoring git entirely (the only way to send gitignored files). `--to` picks the destination, `--dry-run` previews |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
 | `teleport ship [bin]` | Deploy a local binary to its OS-matching bin profile |
 | `teleport shell [profile]` | Open an interactive shell on the remote, already in the profile's path |
@@ -239,6 +244,60 @@ teleport ship --to ~/.local/bin # override the remote bin dir for this run
 teleport ship --name mycli      # rename the binary on the remote
 ```
 
+## Push — upload anything, git or not
+
+`teleport push <local-path>... [profile]` uploads the paths you name **exactly as
+given**. It never reads the git index or `.gitignore`, which makes it the only
+transfer command that can send a build directory, a compiled asset bundle, or any
+other artifact git deliberately hides.
+
+```sh
+teleport push web/dist                          # → <profile path>/web/dist
+teleport push web/dist --to web/dist.new        # one path: --to is the exact destination
+teleport push a.env b.env --to config           # many paths: --to is a directory
+teleport push web/dist --to dist.new --then swap  # upload, then swap it in
+teleport push web/dist --dry-run                # print the plan, connect to nothing
+```
+
+### How it differs from `sync` and `ship`
+
+This is the exact point where it's easy to reach for the wrong command, so, in
+writing:
+
+| | Reads `.gitignore` | Accepts | Notes |
+|---|---|---|---|
+| `sync` | **Yes** — an ignored path is skipped **silently** and the run still reports success | git-tracked files (`-u` adds untracked, but *still not ignored ones*) | The git-aware command. Its semantics are deliberate and are not changing |
+| `push` | **No** — uploads precisely what you name | any file or directory | The explicit escape hatch |
+| `ship` | n/a | **executables only** — validates ELF/Mach-O/PE magic and rejects anything else | A binary channel that verifies it got a binary |
+
+If `sync -u` seemed to "lose" a file, it was gitignored. That is what `push` is
+for.
+
+### Rules
+
+- **The profile is the boundary.** `--to` is always relative to the profile's
+  remote `path`; absolute values are rejected, and so is anything that would
+  escape the profile directory via `..`. `push` cannot write elsewhere on the box.
+- **Without `--to`**, the destination mirrors the path relative to your current
+  directory: `push web/dist` from the repo root lands at `<path>/web/dist`.
+- **Directories are recursive**, and every directory in the tree (empty ones
+  included) is created on the remote.
+- **No deletion.** There is no rsync-style `--delete` — removing files remotely is
+  a different class of risk. For a clean replace, push to a new directory and swap
+  it in an action: `push dist --to dist.new --then swap`.
+- **Symlinks are followed** and their content uploaded. A broken symlink or a
+  symlink cycle is a loud error, and it aborts the run *before* anything uploads.
+- **Only the exec bit is preserved** (`0755` if the local file is executable,
+  `0644` otherwise). No unconditional `chmod +x` — that's `ship`'s job.
+- **Every upload is size-verified** (a truncated transfer fails). `--checksum`
+  additionally compares SHA256 on both ends.
+- **`last sync` is not touched.** That timestamp tracks git parity with the
+  remote; `push` says nothing about git.
+
+Headless: `--json` prints one result object (`sent`, `bytes`, `verified`,
+`files[]`, plus nested `actions[]` when `--then` is used) and `--dry-run` exits
+`0` without opening a connection.
+
 ## Shell — jump onto the remote
 
 `teleport shell [profile]` drops you into an interactive shell on the remote,
@@ -333,6 +392,7 @@ teleport beam -a --no-input     # send unsent commits, no picker (exit 2 if -a i
 teleport mirror -a --no-input   # advance the remote to HEAD, unattended
 teleport clean --no-input       # --no-input implies -y; never discards without an explicit opt-in
 teleport mirror -a --then deploy --no-input --json   # mirror + run 'deploy', logs on stderr
+teleport push web/dist --to dist.new --then swap --no-input --json   # upload a build, then swap it
 ```
 
 Exit codes: `0` success / in sync · `1` execution error, or drift detected by
