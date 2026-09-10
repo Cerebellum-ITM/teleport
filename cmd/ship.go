@@ -70,16 +70,23 @@ func runShip(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is not a regular file", localPath)
 	}
 
-	// Determine target OS (flag > auto-detect).
+	// The process log is named phases here: steps is already the ship progress
+	// view's list of transfer steps.
+	phases := newStepLog("ship")
+
+	phases.Start("detect", localPath)
 	targetOS := bindetect.OS(shipOS)
 	if targetOS == "" {
 		targetOS, err = bindetect.Detect(localPath)
 		if err != nil {
+			phases.Fail()
 			return fmt.Errorf("detect binary type: %w", err)
 		}
 	} else if !bindetect.Valid(string(targetOS)) {
+		phases.Fail()
 		return fmt.Errorf("invalid --os %q (expected linux|macos|windows)", shipOS)
 	}
+	phases.Done(fmt.Sprintf("%s · %s", targetOS, tui.HumanBytes(info.Size())))
 
 	// If resolveShipContext gave us a profile already (from BinFile match),
 	// verify its OS matches; otherwise look up by targetOS.
@@ -102,11 +109,14 @@ func runShip(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	phases.Start("connect", fmt.Sprintf("%s:%s", profile.Host, binDir))
 	client, err := connectToHost(host)
 	if err != nil {
+		phases.Fail()
 		return err
 	}
 	defer client.Close()
+	phases.Done("")
 
 	start := time.Now()
 	tmpDir := fmt.Sprintf("/tmp/teleport-ship-%d-%d", os.Getpid(), time.Now().UnixNano())
