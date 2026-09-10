@@ -442,6 +442,10 @@ The phase names are shared across the transfer commands — `scan`, `connect`,
 everywhere. A running phase rewrites its own line, which is how a long `compare`
 over a large artifact shows `hashing 2/13` instead of looking hung.
 
+The transfer view below them is a **fixed eight rows** of recent files plus the
+bar, not a full-height pane: it scrolls the terminal by its own height and no
+more, so the phases above stay where you can read them.
+
 Under `--json`, or with no TTY, the same stream becomes `[push] phase: detail`
 lines on stderr. `-v` adds the per-file decisions (`cache hit`, `size differs`,
 `content differs`) and switches the phases to one line each, since a live line
