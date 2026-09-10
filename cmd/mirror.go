@@ -47,15 +47,16 @@ func init() {
 
 // mirrorResult is the --json shape for mirror.
 type mirrorResult struct {
-	Command     string         `json:"command"`
-	Target      string         `json:"target"`
-	Branch      string         `json:"branch"`
-	From        string         `json:"from"`
-	To          string         `json:"to"`
-	Commits     []string       `json:"commits"`
-	FastForward bool           `json:"fast_forward"`
-	Forced      bool           `json:"forced"`
-	Actions     []actionResult `json:"actions,omitempty"`
+	Command     string             `json:"command"`
+	Target      string             `json:"target"`
+	Branch      string             `json:"branch"`
+	From        string             `json:"from"`
+	To          string             `json:"to"`
+	Phases      map[string]float64 `json:"phases,omitempty"`
+	Commits     []string           `json:"commits"`
+	FastForward bool               `json:"fast_forward"`
+	Forced      bool               `json:"forced"`
+	Actions     []actionResult     `json:"actions,omitempty"`
 }
 
 func runMirror(cmd *cobra.Command, args []string) error {
@@ -93,11 +94,16 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	steps := newStepLog("mirror")
+
+	steps.Start("connect", targetOf(profile))
 	client, err := connectToProfile(profile)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	defer client.Close()
+	steps.Done("")
 
 	dir := sshpkg.ShellQuote(profile.Path)
 
@@ -113,7 +119,9 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	steps.Start("inspect", "remote git state")
 	if _, err := client.RunCommand("git -C " + dir + " rev-parse --is-inside-work-tree"); err != nil {
+		steps.Fail()
 		return fmt.Errorf("mirror requires %s:%s to be a git working tree\nhint: cd %s && git init && git checkout -b <branch>", profile.Host, profile.Path, profile.Path)
 	}
 
@@ -129,14 +137,23 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	// Dirty working tree guard (a reset overwrites it, so --force skips this).
 	if !mirrorForce && !unborn {
 		if out, err := client.RunCommand("git -C " + dir + " status --porcelain"); err == nil && strings.TrimSpace(out) != "" {
+			steps.Fail()
 			return fmt.Errorf("remote working tree is dirty\nhint: pass -c to clean it first, or -f to force")
 		}
 	}
+	if unborn {
+		steps.Done("fresh repo, no commits yet")
+	} else {
+		steps.Done("remote at " + shortSHA(remoteHEAD))
+	}
 
+	steps.Start("scan", "commits between the two ends")
 	commits, err := git.CommitsBetween(remoteHEAD, localTip)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
+	steps.Done(fmt.Sprintf("%d commit(s) to advance", len(commits)))
 	if len(commits) == 0 {
 		emit(mirrorResult{
 			Command: "mirror", Target: targetOf(profile), Branch: branch,
@@ -216,32 +233,52 @@ func runMirror(cmd *cobra.Command, args []string) error {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 
+	steps.Start("bundle", fmt.Sprintf("up to %s", chosen.Short))
 	if err := git.BundleTo(base, chosen.SHA, tmp.Name()); err != nil {
+		steps.Fail()
 		return err
 	}
+	bundleSize := int64(0)
+	if st, statErr := os.Stat(tmp.Name()); statErr == nil {
+		bundleSize = st.Size()
+	}
+	steps.Done(tui.HumanBytes(bundleSize))
 
 	remoteBundle := filepath.Join(profile.Path, ".git", "teleport-mirror.bundle")
 	rbq := sshpkg.ShellQuote(remoteBundle)
+	steps.Start("upload", tui.HumanBytes(bundleSize))
 	if err := client.UploadFile(tmp.Name(), remoteBundle); err != nil {
+		steps.Fail()
 		return err
 	}
 	defer func() { _, _ = client.RunCommand("rm -f " + rbq) }()
+	steps.Done("")
 
+	mode := "fast-forward"
+	if useReset {
+		mode = "reset --hard"
+	}
+	steps.Start("apply", mode)
 	if _, err := client.RunCommand("git -C " + dir + " bundle verify " + rbq); err != nil {
+		steps.Fail()
 		return fmt.Errorf("remote bundle verify: %w", err)
 	}
 	if _, err := client.RunCommand("git -C " + dir + " fetch " + rbq + " refs/teleport/mirror"); err != nil {
+		steps.Fail()
 		return fmt.Errorf("remote fetch from bundle: %w", err)
 	}
 	if useReset {
 		if _, err := client.RunCommand("git -C " + dir + " reset --hard FETCH_HEAD"); err != nil {
+			steps.Fail()
 			return fmt.Errorf("remote reset --hard: %w", err)
 		}
 	} else {
 		if _, err := client.RunCommand("git -C " + dir + " merge --ff-only FETCH_HEAD"); err != nil {
+			steps.Fail()
 			return fmt.Errorf("remote fast-forward: %w", err)
 		}
 	}
+	steps.Done("")
 
 	if err := config.TouchLastSync(); err != nil {
 		log.Warn("could not update last sync timestamp", "err", err)
@@ -255,6 +292,7 @@ func runMirror(cmd *cobra.Command, args []string) error {
 		Branch:      branch,
 		From:        shortSHA(remoteHEAD),
 		To:          chosen.Short,
+		Phases:      steps.Durations(),
 		Commits:     reflectedShorts(commits, chosen.SHA),
 		FastForward: fastForward,
 		Forced:      forced,
