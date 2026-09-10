@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"golang.org/x/term"
 )
@@ -48,6 +50,13 @@ func interactive() bool {
 // genuinely interactive session (real TTY, no --no-input) that is not
 // emitting JSON. Otherwise progress is written plainly to stderr.
 func useTUI() bool { return interactive() && !jsonOut }
+
+var (
+	// okMark and elapsedStyle dress a command's final summary line, the one that
+	// states the result after the phases have scrolled by.
+	okMark       = lipgloss.NewStyle().Foreground(theme.Success).Render("✓")
+	elapsedStyle = lipgloss.NewStyle().Foreground(theme.TextDim)
+)
 
 // newStepLog builds the process log for a command: colored and live when the
 // session owns a terminal, plain `[command]` lines on stderr otherwise so stdout

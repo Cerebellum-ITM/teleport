@@ -46,11 +46,6 @@ func init() {
 	registerThenFlag(pushCmd)
 }
 
-var (
-	pushDimStyle = lipgloss.NewStyle().Foreground(theme.TextDim)
-	pushOKMark   = lipgloss.NewStyle().Foreground(theme.Success).Render("✓")
-)
-
 // pushDefaultExcludes are skipped by every push. `.git` is here because sending
 // it is never the intent when pushing a project directory, and `--no-exclude`
 // brings it back for the rare case that wants it (seeding a bare remote repo).
@@ -212,14 +207,14 @@ func runPush(_ *cobra.Command, args []string) error {
 			Files:    files,
 		}, func() {
 			fmt.Printf("  %s nothing to upload · %d file(s) already match %s  %s\n",
-				pushOKMark, skipped, target, pushDimStyle.Render(steps.Elapsed().Round(time.Millisecond).String()))
+				okMark, skipped, target, elapsedStyle.Render(steps.Elapsed().Round(time.Millisecond).String()))
 		})
 		_, actErr := executeActions(client, profile, profileName, thenActions, pushYes || noInput)
 		return actErr
 	}
 
 	steps.Start("upload", fmt.Sprintf("%d file(s) · %s", len(paths), tui.HumanBytes(total)))
-	steps.Done("")
+	steps.Detach()
 
 	header := fmt.Sprintf("Pushing %d file(s) · %s → %s", len(paths), tui.HumanBytes(total), target)
 	upload := func(local string) error {
@@ -257,8 +252,10 @@ func runPush(_ *cobra.Command, args []string) error {
 		return err
 	}
 	if len(failed) > 0 {
+		steps.Fail()
 		return fmt.Errorf("%d file(s) failed to upload", len(failed))
 	}
+	steps.Done("")
 
 	actions, actErr := executeActions(client, profile, profileName, thenActions, pushYes || noInput)
 
@@ -275,14 +272,14 @@ func runPush(_ *cobra.Command, args []string) error {
 		Actions:  actions,
 	}
 	emit(res, func() {
-		line := fmt.Sprintf("  %s pushed %d file(s) · %s · verified (%s)", pushOKMark, len(paths), tui.HumanBytes(total), verified)
+		line := fmt.Sprintf("  %s pushed %d file(s) · %s · verified (%s)", okMark, len(paths), tui.HumanBytes(total), verified)
 		if skipped > 0 {
 			line += fmt.Sprintf(" · skipped %d unchanged", skipped)
 		}
 		if excluded > 0 {
 			line += fmt.Sprintf(" · excluded %d", excluded)
 		}
-		line += pushDimStyle.Render("  " + steps.Elapsed().Round(time.Millisecond).String())
+		line += elapsedStyle.Render("  " + steps.Elapsed().Round(time.Millisecond).String())
 		fmt.Println(line)
 	})
 	return actErr

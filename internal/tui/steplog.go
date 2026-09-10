@@ -73,7 +73,19 @@ func (l *StepLog) Update(detail string) {
 	l.write(detail, "")
 }
 
-// Done closes the running phase with its final detail and duration.
+// Detach ends the live line but keeps the phase open, for a phase whose work is
+// rendered by something else (the transfer view). Done then records the real
+// duration without printing over output that has since scrolled past.
+func (l *StepLog) Detach() {
+	if l.quiet || l.plain || !l.live {
+		return
+	}
+	fmt.Fprintln(l.out)
+	l.live = false
+}
+
+// Done closes the running phase with its final detail and duration. After a
+// Detach it only records the duration: the line it would rewrite is gone.
 func (l *StepLog) Done(detail string) {
 	if l.phase == "" {
 		return
@@ -84,7 +96,7 @@ func (l *StepLog) Done(detail string) {
 	if !l.quiet {
 		if l.plain {
 			fmt.Fprintf(l.out, "[%s] %s%s (%s)\n", l.command, l.phase, plainDetail(detail), round(elapsed))
-		} else {
+		} else if l.live {
 			l.write(detail, round(elapsed).String())
 			fmt.Fprintln(l.out)
 		}
