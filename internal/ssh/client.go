@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -471,6 +472,127 @@ func (c *Client) RemoteSHA256(remotePath string) (string, error) {
 		return "", fmt.Errorf("read remote %s: %w", remotePath, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// RemoteStat is the metadata push needs to decide whether a file may have
+// changed: its size, and its modification time as a Unix timestamp.
+type RemoteStat struct {
+	Size    int64
+	ModTime int64
+}
+
+// RemoteStatMany returns the size and mtime of every path that exists remotely,
+// in one command per batch. It is the cheap first question — metadata, not
+// content — that lets a caller avoid hashing files whose size already proves they
+// differ. Paths that do not exist are absent from the result.
+func (c *Client) RemoteStatMany(paths []string) (map[string]RemoteStat, error) {
+	stats := make(map[string]RemoteStat, len(paths))
+	for start := 0; start < len(paths); start += remoteHashBatch {
+		end := start + remoteHashBatch
+		if end > len(paths) {
+			end = len(paths)
+		}
+
+		quoted := make([]string, 0, end-start)
+		for _, p := range paths[start:end] {
+			quoted = append(quoted, ShellQuote(p))
+		}
+		args := strings.Join(quoted, " ")
+		// The GNU and BSD spellings run back to back with stderr discarded: the
+		// one the server has answers, the other prints nothing. Probing first
+		// would cost a round trip to learn what the output already tells us.
+		cmd := "{ stat -c '%s %Y %n' -- " + args + " 2>/dev/null; " +
+			"stat -f '%z %m %N' -- " + args + " 2>/dev/null; } || true"
+		out, err := c.RunCommand(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("remote stat: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			name, st, ok := parseStatLine(line)
+			if ok {
+				stats[name] = st
+			}
+		}
+	}
+	return stats, nil
+}
+
+// parseStatLine splits one `stat` output line into its path and metadata. Both
+// formats emit "<size> <mtime> <path>", and the path may contain spaces.
+func parseStatLine(line string) (name string, st RemoteStat, ok bool) {
+	fields := strings.SplitN(strings.TrimSpace(line), " ", 3)
+	if len(fields) != 3 {
+		return "", RemoteStat{}, false
+	}
+	size, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return "", RemoteStat{}, false
+	}
+	mtime, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return "", RemoteStat{}, false
+	}
+	if fields[2] == "" {
+		return "", RemoteStat{}, false
+	}
+	return fields[2], RemoteStat{Size: size, ModTime: mtime}, true
+}
+
+// remoteHashBatch is how many paths go into one hashing command, keeping the
+// command line well below the shell's argument limit.
+const remoteHashBatch = 200
+
+// RemoteSHA256Many hashes paths on the server and returns the lowercase hex
+// SHA256 of each one, so only the digests cross the network instead of the file
+// contents. Paths that are missing or unreadable are absent from the result
+// rather than an error, which is how a caller learns they need uploading.
+func (c *Client) RemoteSHA256Many(paths []string) (map[string]string, error) {
+	hashes := make(map[string]string, len(paths))
+	for start := 0; start < len(paths); start += remoteHashBatch {
+		end := start + remoteHashBatch
+		if end > len(paths) {
+			end = len(paths)
+		}
+
+		quoted := make([]string, 0, end-start)
+		for _, p := range paths[start:end] {
+			quoted = append(quoted, ShellQuote(p))
+		}
+		args := strings.Join(quoted, " ")
+		// sha256sum exits non-zero when any path is missing but still prints the
+		// others, and BSD/macOS servers only ship shasum; `|| true` keeps both
+		// cases out of RunCommand's error path.
+		cmd := "if command -v sha256sum >/dev/null 2>&1; then sha256sum -- " + args +
+			"; else shasum -a 256 -- " + args + "; fi 2>/dev/null || true"
+		out, err := c.RunCommand(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("remote sha256: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			hash, name, ok := parseHashLine(line)
+			if ok {
+				hashes[name] = hash
+			}
+		}
+	}
+	return hashes, nil
+}
+
+// parseHashLine splits one `sha256sum` output line into hash and path. The
+// leading `*` of binary mode and the `\` GNU coreutils prepends for a path
+// holding a backslash or newline are both stripped.
+func parseHashLine(line string) (hash, name string, ok bool) {
+	line = strings.TrimSuffix(strings.TrimSpace(line), "\r")
+	line = strings.TrimPrefix(line, "\\")
+	hash, name, found := strings.Cut(line, " ")
+	if !found || len(hash) != sha256.Size*2 {
+		return "", "", false
+	}
+	name = strings.TrimPrefix(strings.TrimSpace(name), "*")
+	if name == "" {
+		return "", "", false
+	}
+	return strings.ToLower(hash), name, true
 }
 
 // Remove deletes remotePath. Missing files are not an error.

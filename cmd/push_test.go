@@ -79,7 +79,7 @@ func TestCollectPushItems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, dirs, err := collectPushItems([]string{"dist"}, "/srv/app", "")
+	items, dirs, _, err := collectPushItems([]string{"dist"}, "/srv/app", "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCollectPushItemsDirsParentsFirst(t *testing.T) {
 	t.Chdir(dir)
 	mustWrite(t, "a/b/c/deep.txt", "x", 0o644)
 
-	_, dirs, err := collectPushItems([]string{"a"}, "/srv/app", "")
+	_, dirs, _, err := collectPushItems([]string{"a"}, "/srv/app", "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestCollectPushItemsErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, dirs, err := collectPushItems(tt.locals, "/srv/app", "")
+			items, dirs, _, err := collectPushItems(tt.locals, "/srv/app", "", nil)
 			if err == nil {
 				t.Fatalf("expected an error naming %q", tt.want)
 			}
@@ -228,5 +228,62 @@ func mustWrite(t *testing.T, rel, content string, mode os.FileMode) {
 	}
 	if err := os.Chmod(rel, mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPushExcluded(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		patterns []string
+		want     bool
+	}{
+		{"base name at any depth", "project/sub/.git", []string{".git"}, true},
+		{"base name at the root", ".git", []string{".git"}, true},
+		{"glob on the base name", "base/odoo_19.0_all.deb", []string{"*.deb"}, true},
+		{"glob anchored to a path", "base/odoo.deb", []string{"base/*.deb"}, true},
+		{"path glob does not match elsewhere", "other/odoo.deb", []string{"base/*.deb"}, false},
+		{"trailing slash is a directory pattern", "web/node_modules", []string{"node_modules/"}, true},
+		{"no pattern matches", "web/app.js", []string{".git", "*.deb"}, false},
+		{"empty pattern set", "web/app.js", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pushExcluded(tc.path, tc.patterns); got != tc.want {
+				t.Fatalf("pushExcluded(%q, %v) = %v, want %v", tc.path, tc.patterns, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCollectPushItemsExcludes(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	mustWrite(t, "app/index.html", "<html>", 0o644)
+	mustWrite(t, "app/.git/objects/ab/cdef", "loose object", 0o644)
+	mustWrite(t, "app/logs/run.log", "noise", 0o644)
+	mustWrite(t, "app/assets/app.js", "console.log(1)", 0o644)
+
+	items, dirs, excluded, err := collectPushItems([]string{"app"}, "/srv/app", "", []string{".git", "*.log"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if excluded != 2 {
+		t.Fatalf("excluded = %d, want 2 (.git and run.log): %v", excluded, remotesOf(items))
+	}
+	for _, it := range items {
+		if strings.Contains(it.Remote, "/.git/") || strings.HasSuffix(it.Remote, ".log") {
+			t.Fatalf("excluded path was collected: %s", it.Remote)
+		}
+	}
+	for _, d := range dirs {
+		if strings.Contains(d, "/.git") {
+			t.Fatalf("excluded directory was queued for mkdir: %s", d)
+		}
+	}
+
+	if _, _, _, err := collectPushItems([]string{"app/logs/run.log"}, "/srv/app", "", []string{"*.log"}); err == nil {
+		t.Fatal("a named path matching an exclude should be an error, not a silent no-op")
 	}
 }

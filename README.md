@@ -54,7 +54,8 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport actions add/list/edit/remove` | Manage a profile's remote actions (interactive wizard or flags) |
 | `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
-| `teleport push <path>... [profile]` | Upload the given paths as-is, ignoring git entirely (the only way to send gitignored files). `--to` picks the destination, `--dry-run` previews |
+| `teleport push <path>... [profile]` | Upload the given paths as-is, ignoring git entirely (the only way to send gitignored files). Files the remote already has are skipped; `-f` re-sends them. `--to` picks the destination, `-x` excludes, `--dry-run` previews |
+| `teleport exclude [list\|add\|remove]` | Manage the paths `push` skips in this project (`.git` is skipped by default) |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
 | `teleport ship [bin]` | Deploy a local binary to its OS-matching bin profile |
 | `teleport shell [profile]` | Open an interactive shell on the remote, already in the profile's path |
@@ -257,6 +258,7 @@ teleport push web/dist --to web/dist.new        # one path: --to is the exact de
 teleport push a.env b.env --to config           # many paths: --to is a directory
 teleport push web/dist --to dist.new --then swap  # upload, then swap it in
 teleport push web/dist --dry-run                # print the plan, connect to nothing
+teleport push web/dist -f                       # re-send everything, unchanged included
 ```
 
 ### How it differs from `sync` and `ship`
@@ -273,6 +275,26 @@ writing:
 If `sync -u` seemed to "lose" a file, it was gitignored. That is what `push` is
 for.
 
+### Excluding paths
+
+```sh
+teleport exclude                       # browse the project tree and pick what to skip
+teleport exclude list                  # the effective set, and where each entry comes from
+teleport exclude add node_modules '*.log'
+teleport exclude remove '*.log'
+```
+
+The picker walks the tree: `→` enters a folder, `←` goes back up, `tab` marks the
+entry under the cursor, `enter` saves. A nested pick is stored anchored to that one
+place (`web/node_modules`), a top-level pick as a bare name that matches anywhere.
+Patterns it never showed — a glob like `*.log`, or entries in folders you did not
+open — are left alone, so the picker and `add`/`remove` can be mixed freely.
+
+The list lives in the **project's** local config (`push_exclude` in
+`~/.config/teleport/projects/<hash>.toml`), so it follows the working directory the
+way the sync profile does. `--exclude` adds to it for one run; `--no-exclude`
+ignores everything, defaults included.
+
 ### Rules
 
 - **The profile is the boundary.** `--to` is always relative to the profile's
@@ -282,6 +304,12 @@ for.
   directory: `push web/dist` from the repo root lands at `<path>/web/dist`.
 - **Directories are recursive**, and every directory in the tree (empty ones
   included) is created on the remote.
+- **`.git` is excluded by default**, along with this project's saved list and any
+  `-x`/`--exclude` globs. A pattern without a slash matches a base name at any
+  depth (`-x node_modules`, `-x '*.log'`); one with a slash matches the path as you
+  named it (`-x 'base/*.deb'`). A matching directory is pruned, never walked.
+  `--no-exclude` sends everything, `.git` included. Naming an excluded path
+  directly is an error rather than a silent no-op.
 - **No deletion.** There is no rsync-style `--delete` — removing files remotely is
   a different class of risk. For a clean replace, push to a new directory and swap
   it in an action: `push dist --to dist.new --then swap`.
@@ -289,14 +317,30 @@ for.
   symlink cycle is a loud error, and it aborts the run *before* anything uploads.
 - **Only the exec bit is preserved** (`0755` if the local file is executable,
   `0644` otherwise). No unconditional `chmod +x` — that's `ship`'s job.
+- **Files the remote already has are skipped**, and deciding that is cheap. Each
+  run asks the cheapest question that can settle a file: one batched remote
+  `stat` first, so a missing file or a different size needs no hash at all; then a
+  local cache, so a destination already proven identical — same size and mtime on
+  both ends since it was verified — is skipped without reading a byte. Only what
+  is still ambiguous is hashed, and that hash is computed **on the server** (one
+  batched command, so digests cross the network, never contents). A second push of
+  an unchanged tree therefore costs one `stat` command, and a large artifact that
+  did not change is neither resent nor re-read. Skipped files are listed with a
+  `↷`, and `-v` logs why each file is sent or skipped. `-f`/`--force` skips every
+  check and uploads everything.
 - **Every upload is size-verified** (a truncated transfer fails). `--checksum`
-  additionally compares SHA256 on both ends.
+  additionally compares SHA256 on both ends after writing, and makes the skip
+  decision hash instead of trusting the cache — the escape hatch for a file edited
+  in place without its size or mtime changing.
 - **`last sync` is not touched.** That timestamp tracks git parity with the
   remote; `push` says nothing about git.
 
-Headless: `--json` prints one result object (`sent`, `bytes`, `verified`,
-`files[]`, plus nested `actions[]` when `--then` is used) and `--dry-run` exits
-`0` without opening a connection.
+Headless: `--json` prints one result object (`sent`, `skipped`, `excluded`, `bytes`,
+`verified`, `files[]` — each entry flagged `skipped` when it was already on the
+remote — plus nested `actions[]` when `--then` is used) and `--dry-run` exits
+`0` without opening a connection. Because a dry run connects to nothing, it
+cannot know what the remote already has: it lists the whole plan, and the real
+run is what skips.
 
 ## Shell — jump onto the remote
 

@@ -86,9 +86,25 @@ type LocalConfig struct {
 	// deprecated global [bin_profiles] section.
 	BinProfiles map[string]BinProfile `toml:"bin_profiles,omitempty"`
 
+	// PushExclude holds the glob patterns `teleport push` skips in this project,
+	// on top of its built-in defaults. A pattern without a slash matches a base
+	// name at any depth; one with a slash matches the local path as named.
+	PushExclude []string `toml:"push_exclude,omitempty"`
+
 	// BeamedCommits maps a profile name to the set of commit SHAs already
 	// beamed to that destination, with the time each was sent.
 	BeamedCommits map[string]map[string]time.Time `toml:"beamed_commits,omitempty"`
+}
+
+// projectKey identifies the current working directory, and is the file name both
+// the project config and the push cache are built from.
+func projectKey() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("getwd: %w", err)
+	}
+	h := sha256.Sum256([]byte(cwd))
+	return fmt.Sprintf("%x", h[:8]), nil
 }
 
 func GlobalConfigPath() (string, error) {
@@ -106,13 +122,11 @@ func LocalConfigPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("home dir: %w", err)
 	}
-	cwd, err := os.Getwd()
+	key, err := projectKey()
 	if err != nil {
-		return "", fmt.Errorf("getwd: %w", err)
+		return "", err
 	}
-	h := sha256.Sum256([]byte(cwd))
-	name := fmt.Sprintf("%x.toml", h[:8])
-	return filepath.Join(home, globalConfigDir, "projects", name), nil
+	return filepath.Join(home, globalConfigDir, "projects", key+".toml"), nil
 }
 
 func LoadGlobal() (*GlobalConfig, error) {

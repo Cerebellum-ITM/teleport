@@ -8,16 +8,23 @@ import (
 	"sort"
 	"strings"
 
+	lipgloss "charm.land/lipgloss/v2"
+	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
+	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
+	"github.com/pascualchavez/teleport/internal/theme"
 	"github.com/pascualchavez/teleport/internal/tui"
 	"github.com/spf13/cobra"
 )
 
 var (
-	pushTo       string
-	pushDryRun   bool
-	pushChecksum bool
-	pushYes      bool
+	pushTo        string
+	pushDryRun    bool
+	pushChecksum  bool
+	pushExclude   []string
+	pushNoExclude bool
+	pushForce     bool
+	pushYes       bool
 )
 
 var pushCmd = &cobra.Command{
@@ -30,24 +37,34 @@ var pushCmd = &cobra.Command{
 func init() {
 	pushCmd.Flags().StringVar(&pushTo, "to", "", "destination inside the profile path (relative; never absolute)")
 	pushCmd.Flags().BoolVar(&pushDryRun, "dry-run", false, "list what would be uploaded without connecting")
-	pushCmd.Flags().BoolVar(&pushChecksum, "checksum", false, "verify each uploaded file with a SHA256 comparison")
+	pushCmd.Flags().BoolVar(&pushChecksum, "checksum", false, "verify each uploaded file with a SHA256 comparison, and hash instead of trusting the skip cache")
+	pushCmd.Flags().BoolVarP(&pushForce, "force", "f", false, "upload every file, even the ones the remote already has")
+	pushCmd.Flags().StringArrayVarP(&pushExclude, "exclude", "x", nil, "skip paths matching this glob (repeatable)")
+	pushCmd.Flags().BoolVar(&pushNoExclude, "no-exclude", false, "ignore every exclude, this project's list and .git included")
 	pushCmd.Flags().BoolVarP(&pushYes, "yes", "y", false, "auto-confirm actions that require confirmation")
 	registerThenFlag(pushCmd)
 }
+
+// pushDefaultExcludes are skipped by every push. `.git` is here because sending
+// it is never the intent when pushing a project directory, and `--no-exclude`
+// brings it back for the rare case that wants it (seeding a bare remote repo).
+var pushDefaultExcludes = []string{".git"}
 
 // pushItem is one file to upload, with its resolved remote destination.
 type pushItem struct {
 	Local  string
 	Remote string
 	Size   int64
+	Mtime  int64
 	Mode   os.FileMode
 }
 
 // pushFile is the per-file --json shape.
 type pushFile struct {
-	Local  string `json:"local"`
-	Remote string `json:"remote"`
-	Bytes  int64  `json:"bytes"`
+	Local   string `json:"local"`
+	Remote  string `json:"remote"`
+	Bytes   int64  `json:"bytes"`
+	Skipped bool   `json:"skipped,omitempty"`
 }
 
 // pushResult is the --json shape for push.
@@ -56,6 +73,8 @@ type pushResult struct {
 	Target   string         `json:"target"`
 	DryRun   bool           `json:"dry_run,omitempty"`
 	Sent     int            `json:"sent"`
+	Skipped  int            `json:"skipped"`
+	Excluded int            `json:"excluded"`
 	Bytes    int64          `json:"bytes"`
 	Verified string         `json:"verified"`
 	Files    []pushFile     `json:"files"`
@@ -68,7 +87,12 @@ func runPush(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	items, dirs, err := collectPushItems(locals, profile.Path, pushTo)
+	excludes, err := effectivePushExcludes()
+	if err != nil {
+		return err
+	}
+
+	items, dirs, excluded, err := collectPushItems(locals, profile.Path, pushTo, excludes)
 	if err != nil {
 		return err
 	}
@@ -100,13 +124,14 @@ func runPush(_ *cobra.Command, args []string) error {
 
 	if pushDryRun {
 		res := pushResult{
-			Command: "push",
-			Target:  target,
-			DryRun:  true,
-			Bytes:   total,
-			Files:   files,
+			Command:  "push",
+			Target:   target,
+			DryRun:   true,
+			Excluded: excluded,
+			Bytes:    total,
+			Files:    files,
 		}
-		emit(res, func() { printPushPlan(target, dirs, items, total) })
+		emit(res, func() { printPushPlan(target, dirs, items, total, excluded) })
 		return nil
 	}
 
@@ -122,12 +147,50 @@ func runPush(_ *cobra.Command, args []string) error {
 		}
 	}
 
+	if !pushForce {
+		unchanged, cache, err := planPushSkips(client, items, profileName)
+		if err != nil {
+			return err
+		}
+		if err := config.SavePushCache(profileName, cache); err != nil {
+			log.Warn("could not save the push cache", "err", err)
+		}
+		kept := make([]string, 0, len(paths))
+		total = 0
+		for i, f := range files {
+			if unchanged[f.Local] {
+				files[i].Skipped = true
+				continue
+			}
+			kept = append(kept, f.Local)
+			total += f.Bytes
+		}
+		paths = kept
+		printPushSkipped(files)
+	}
+
 	verified := "size"
 	if pushChecksum {
 		verified = "checksum"
 	}
 
-	header := fmt.Sprintf("Pushing %d file(s) · %s → %s", len(items), tui.HumanBytes(total), target)
+	skipped := len(items) - len(paths)
+	if len(paths) == 0 {
+		emit(pushResult{
+			Command:  "push",
+			Target:   target,
+			Skipped:  skipped,
+			Excluded: excluded,
+			Verified: verified,
+			Files:    files,
+		}, func() {
+			fmt.Printf("  nothing to upload · %d file(s) already match %s\n", skipped, target)
+		})
+		_, actErr := executeActions(client, profile, profileName, thenActions, pushYes || noInput)
+		return actErr
+	}
+
+	header := fmt.Sprintf("Pushing %d file(s) · %s → %s", len(paths), tui.HumanBytes(total), target)
 	upload := func(local string) error {
 		it := byLocal[local]
 		if err := client.UploadFileProgress(it.Local, it.Remote, nil); err != nil {
@@ -171,22 +234,188 @@ func runPush(_ *cobra.Command, args []string) error {
 	res := pushResult{
 		Command:  "push",
 		Target:   target,
-		Sent:     len(items),
+		Sent:     len(paths),
+		Skipped:  skipped,
+		Excluded: excluded,
 		Bytes:    total,
 		Verified: verified,
 		Files:    files,
 		Actions:  actions,
 	}
 	emit(res, func() {
-		fmt.Printf("  pushed %d file(s) · %s · verified (%s)\n", len(items), tui.HumanBytes(total), verified)
+		line := fmt.Sprintf("  pushed %d file(s) · %s · verified (%s)", len(paths), tui.HumanBytes(total), verified)
+		if skipped > 0 {
+			line += fmt.Sprintf(" · skipped %d unchanged", skipped)
+		}
+		if excluded > 0 {
+			line += fmt.Sprintf(" · excluded %d", excluded)
+		}
+		fmt.Println(line)
 	})
 	return actErr
 }
 
+// effectivePushExcludes unions the built-in defaults, this project's saved list
+// and the --exclude flags; --no-exclude drops all three. A malformed glob is an
+// error rather than a pattern that silently matches nothing.
+func effectivePushExcludes() ([]string, error) {
+	if pushNoExclude {
+		return nil, nil
+	}
+	cfg, err := config.LoadLocal()
+	if err != nil {
+		return nil, fmt.Errorf("load local config: %w", err)
+	}
+
+	patterns := make([]string, 0, len(pushDefaultExcludes)+len(cfg.PushExclude)+len(pushExclude))
+	patterns = append(patterns, pushDefaultExcludes...)
+	patterns = append(patterns, cfg.PushExclude...)
+	patterns = append(patterns, pushExclude...)
+	for _, p := range patterns {
+		if err := validateExcludePattern(p); err != nil {
+			return nil, err
+		}
+	}
+	return patterns, nil
+}
+
+// validateExcludePattern rejects a glob path.Match cannot parse.
+func validateExcludePattern(pattern string) error {
+	if strings.TrimSpace(pattern) == "" {
+		return fmt.Errorf("empty exclude pattern")
+	}
+	if _, err := path.Match(pattern, "x"); err != nil {
+		return fmt.Errorf("exclude %q: %w", pattern, err)
+	}
+	return nil
+}
+
+// pushExcluded reports whether localPath matches any pattern. A pattern without a
+// slash is matched against the base name, so it applies at any depth; one holding
+// a slash is matched against the path as it was named on the command line, which
+// is also how push prints it.
+func pushExcluded(localPath string, patterns []string) bool {
+	localPath = filepath.ToSlash(localPath)
+	base := path.Base(localPath)
+	for _, pattern := range patterns {
+		pattern = strings.TrimSuffix(pattern, "/")
+		target := base
+		if strings.Contains(pattern, "/") {
+			target = localPath
+		}
+		if ok, err := path.Match(pattern, target); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+// planPushSkips decides which items the remote already holds, asking the cheapest
+// question that can settle each one. A remote stat comes first: a missing file or a
+// different size needs no hash at all. For the rest, a cache entry whose recorded
+// stats still match both ends proves the file is unchanged without reading a byte.
+// Only what is still ambiguous is hashed — on the server for the remote side, so
+// the contents never cross the network. The returned cache carries the new
+// findings and is for the caller to persist.
+func planPushSkips(client *sshpkg.Client, items []pushItem, profileName string) (map[string]bool, *config.PushCache, error) {
+	remotes := make([]string, 0, len(items))
+	for _, it := range items {
+		remotes = append(remotes, it.Remote)
+	}
+	stats, err := client.RemoteStatMany(remotes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cache := config.LoadPushCache(profileName)
+	unchanged := make(map[string]bool, len(items))
+	var ambiguous []pushItem
+
+	for _, it := range items {
+		st, ok := stats[it.Remote]
+		if !ok {
+			log.Debug("sending: not on the remote", "file", it.Local, "remote", it.Remote)
+			continue
+		}
+		if st.Size != it.Size {
+			log.Debug("sending: size differs", "file", it.Local, "local", it.Size, "remote", st.Size)
+			continue
+		}
+
+		entry, cached := cache.Entries[it.Remote]
+		fresh := cached &&
+			entry.LocalSize == it.Size && entry.LocalMtime == it.Mtime &&
+			entry.RemoteSize == st.Size && entry.RemoteMtime == st.ModTime
+		if fresh && !pushChecksum {
+			log.Debug("skipping: cache hit", "file", it.Local)
+			unchanged[it.Local] = true
+			continue
+		}
+		ambiguous = append(ambiguous, it)
+	}
+
+	if len(ambiguous) == 0 {
+		return unchanged, cache, nil
+	}
+
+	toHash := make([]string, 0, len(ambiguous))
+	for _, it := range ambiguous {
+		toHash = append(toHash, it.Remote)
+	}
+	remoteHashes, err := client.RemoteSHA256Many(toHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, it := range ambiguous {
+		remoteHash, ok := remoteHashes[it.Remote]
+		if !ok {
+			log.Debug("sending: not on the remote", "file", it.Local, "remote", it.Remote)
+			continue
+		}
+		localHash, err := localSHA256(it.Local)
+		if err != nil {
+			log.Debug("sending: local hash failed", "file", it.Local, "err", err)
+			continue
+		}
+		if localHash != remoteHash {
+			log.Debug("sending: content differs", "file", it.Local, "local", localHash, "remote", remoteHash)
+			continue
+		}
+
+		unchanged[it.Local] = true
+		st := stats[it.Remote]
+		cache.Entries[it.Remote] = config.PushCacheEntry{
+			LocalSize:   it.Size,
+			LocalMtime:  it.Mtime,
+			RemoteSize:  st.Size,
+			RemoteMtime: st.ModTime,
+			Hash:        localHash,
+		}
+	}
+	return unchanged, cache, nil
+}
+
+// printPushSkipped lists the files the remote already has, so a run does not
+// look like it ignored them. It writes to stderr, like the plain progress view,
+// keeping stdout a single object under --json.
+func printPushSkipped(files []pushFile) {
+	mark := lipgloss.NewStyle().Foreground(theme.TextDim).Render("↷")
+	name := lipgloss.NewStyle().Foreground(theme.TextDim)
+	for _, f := range files {
+		if f.Skipped {
+			fmt.Fprintf(os.Stderr, "  %s  %s\n", mark, name.Render(f.Local))
+		}
+	}
+}
+
 // printPushPlan renders the --dry-run plan. It goes through emit's human branch,
 // so under --json nothing of this reaches stdout.
-func printPushPlan(target string, dirs []string, items []pushItem, total int64) {
+func printPushPlan(target string, dirs []string, items []pushItem, total int64, excluded int) {
 	fmt.Printf("Would push %d file(s) · %s → %s (dry run)\n", len(items), tui.HumanBytes(total), target)
+	if excluded > 0 {
+		fmt.Printf("  excluded %d path(s)\n", excluded)
+	}
 	for _, d := range dirs {
 		fmt.Printf("  mkdir  %s\n", d)
 	}
@@ -289,20 +518,28 @@ func localRelPath(localPath string) (string, error) {
 // destination. Symlinks are followed; a missing path, broken symlink, symlink
 // cycle or unsupported file type is a loud error. Nothing is uploaded until this
 // returns cleanly, so those failures abort with an untouched remote.
-func collectPushItems(locals []string, base, to string) ([]pushItem, []string, error) {
+func collectPushItems(locals []string, base, to string, excludes []string) ([]pushItem, []string, int, error) {
 	single := len(locals) == 1
 	var items []pushItem
+	excluded := 0
 	dirSet := make(map[string]struct{})
 
 	for _, local := range locals {
 		dest, err := resolvePushDest(base, local, to, single)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 
 		info, err := os.Stat(local)
 		if err != nil {
-			return nil, nil, fmt.Errorf("push %s: %w", local, err)
+			return nil, nil, 0, fmt.Errorf("push %s: %w", local, err)
+		}
+
+		// A path named on the command line that an exclude matches is an error:
+		// naming something and having nothing happen is the silent-skip failure
+		// push exists to avoid.
+		if pushExcluded(local, excludes) {
+			return nil, nil, 0, fmt.Errorf("push %s: matches an exclude; drop it with `teleport exclude remove` or pass --no-exclude", local)
 		}
 
 		switch {
@@ -311,18 +548,20 @@ func collectPushItems(locals []string, base, to string) ([]pushItem, []string, e
 				Local:  filepath.ToSlash(local),
 				Remote: dest,
 				Size:   info.Size(),
+				Mtime:  info.ModTime().Unix(),
 				Mode:   pushMode(info.Mode()),
 			})
 		case info.IsDir():
 			dirSet[dest] = struct{}{}
 			seen := make(map[string]struct{})
-			sub, err := walkPushDir(local, dest, seen, dirSet)
+			sub, dropped, err := walkPushDir(local, dest, seen, dirSet, excludes)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 			items = append(items, sub...)
+			excluded += dropped
 		default:
-			return nil, nil, fmt.Errorf("push %s: unsupported file type %s", local, info.Mode().Type())
+			return nil, nil, 0, fmt.Errorf("push %s: unsupported file type %s", local, info.Mode().Type())
 		}
 	}
 
@@ -332,19 +571,19 @@ func collectPushItems(locals []string, base, to string) ([]pushItem, []string, e
 	}
 	// Shortest first so parents are created before their children.
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) < len(dirs[j]) })
-	return items, dirs, nil
+	return items, dirs, excluded, nil
 }
 
 // walkPushDir recurses into localDir, following symlinks. seen holds the
 // canonical paths of directories already visited on this branch so a symlink
 // cycle fails loudly instead of looping forever.
-func walkPushDir(localDir, remoteDir string, seen map[string]struct{}, dirSet map[string]struct{}) ([]pushItem, error) {
+func walkPushDir(localDir, remoteDir string, seen map[string]struct{}, dirSet map[string]struct{}, excludes []string) ([]pushItem, int, error) {
 	real, err := filepath.EvalSymlinks(localDir)
 	if err != nil {
-		return nil, fmt.Errorf("push %s: %w", localDir, err)
+		return nil, 0, fmt.Errorf("push %s: %w", localDir, err)
 	}
 	if _, dup := seen[real]; dup {
-		return nil, fmt.Errorf("push %s: symlink cycle through %s", localDir, real)
+		return nil, 0, fmt.Errorf("push %s: symlink cycle through %s", localDir, real)
 	}
 	seen[real] = struct{}{}
 	// Popped on unwind so the guard is per-branch: two sibling symlinks to the
@@ -353,17 +592,26 @@ func walkPushDir(localDir, remoteDir string, seen map[string]struct{}, dirSet ma
 
 	entries, err := os.ReadDir(localDir)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", localDir, err)
+		return nil, 0, fmt.Errorf("read %s: %w", localDir, err)
 	}
 
 	var items []pushItem
+	excluded := 0
 	for _, e := range entries {
 		localPath := filepath.Join(localDir, e.Name())
 		remotePath := path.Join(remoteDir, e.Name())
 
+		// A matching directory is counted once and never walked, so excluding
+		// `.git` costs one check instead of enumerating thousands of objects.
+		if pushExcluded(localPath, excludes) {
+			log.Debug("excluded", "path", localPath)
+			excluded++
+			continue
+		}
+
 		info, err := os.Stat(localPath)
 		if err != nil {
-			return nil, fmt.Errorf("push %s: %w", localPath, err)
+			return nil, 0, fmt.Errorf("push %s: %w", localPath, err)
 		}
 
 		switch {
@@ -372,20 +620,22 @@ func walkPushDir(localDir, remoteDir string, seen map[string]struct{}, dirSet ma
 				Local:  filepath.ToSlash(localPath),
 				Remote: remotePath,
 				Size:   info.Size(),
+				Mtime:  info.ModTime().Unix(),
 				Mode:   pushMode(info.Mode()),
 			})
 		case info.IsDir():
 			dirSet[remotePath] = struct{}{}
-			sub, err := walkPushDir(localPath, remotePath, seen, dirSet)
+			sub, dropped, err := walkPushDir(localPath, remotePath, seen, dirSet, excludes)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			items = append(items, sub...)
+			excluded += dropped
 		default:
-			return nil, fmt.Errorf("push %s: unsupported file type %s", localPath, info.Mode().Type())
+			return nil, 0, fmt.Errorf("push %s: unsupported file type %s", localPath, info.Mode().Type())
 		}
 	}
-	return items, nil
+	return items, excluded, nil
 }
 
 // pushMode preserves the execution bit and nothing else: local umask artifacts
