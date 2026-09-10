@@ -49,7 +49,15 @@ func init() {
 }
 
 func runShip(_ *cobra.Command, args []string) error {
-	localPath, profile, err := resolveShipContext(args)
+	localCfg, err := config.LoadLocal()
+	if err != nil {
+		return fmt.Errorf("load local config: %w", err)
+	}
+	if err := maybeMigrateBinProfiles(localCfg); err != nil {
+		return err
+	}
+
+	localPath, profile, err := resolveShipContext(args, localCfg)
 	if err != nil {
 		return err
 	}
@@ -62,27 +70,30 @@ func runShip(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is not a regular file", localPath)
 	}
 
-	// Determine target OS (flag > auto-detect).
+	// The process log is named phases here: steps is already the ship progress
+	// view's list of transfer steps.
+	phases := newStepLog("ship")
+
+	phases.Start("detect", localPath)
 	targetOS := bindetect.OS(shipOS)
 	if targetOS == "" {
 		targetOS, err = bindetect.Detect(localPath)
 		if err != nil {
+			phases.Fail()
 			return fmt.Errorf("detect binary type: %w", err)
 		}
 	} else if !bindetect.Valid(string(targetOS)) {
+		phases.Fail()
 		return fmt.Errorf("invalid --os %q (expected linux|macos|windows)", shipOS)
 	}
+	phases.Done(fmt.Sprintf("%s · %s", targetOS, tui.HumanBytes(info.Size())))
 
 	// If resolveShipContext gave us a profile already (from BinFile match),
 	// verify its OS matches; otherwise look up by targetOS.
 	if profile == nil {
-		globalCfg, err := config.LoadGlobal()
-		if err != nil {
-			return fmt.Errorf("load global config: %w", err)
-		}
-		p, ok := globalCfg.BinProfiles[string(targetOS)]
+		p, ok := localCfg.BinProfiles[string(targetOS)]
 		if !ok {
-			return fmt.Errorf("no bin profile configured for %s — run \"teleport init\" and add one", targetOS)
+			return fmt.Errorf("no bin profile configured for %s in this project — run \"teleport init\" and add one", targetOS)
 		}
 		profile = &p
 	}
@@ -98,11 +109,14 @@ func runShip(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	phases.Start("connect", fmt.Sprintf("%s:%s", profile.Host, binDir))
 	client, err := connectToHost(host)
 	if err != nil {
+		phases.Fail()
 		return err
 	}
 	defer client.Close()
+	phases.Done("")
 
 	start := time.Now()
 	tmpDir := fmt.Sprintf("/tmp/teleport-ship-%d-%d", os.Getpid(), time.Now().UnixNano())
@@ -210,21 +224,17 @@ func runShip(_ *cobra.Command, args []string) error {
 
 // resolveShipContext returns the local binary path and, when a profile
 // BinFile is configured and no explicit arg was passed, also pre-resolves
-// the matching BinProfile (to avoid a second lookup by OS later).
-func resolveShipContext(args []string) (string, *config.BinProfile, error) {
+// the matching BinProfile (to avoid a second lookup by OS later). Bin
+// profiles are read from the project's local config.
+func resolveShipContext(args []string, localCfg *config.LocalConfig) (string, *config.BinProfile, error) {
 	// Explicit arg always wins; profile lookup happens by OS later.
 	if len(args) > 0 {
 		return args[0], nil, nil
 	}
 
-	globalCfg, err := config.LoadGlobal()
-	if err != nil {
-		return "", nil, fmt.Errorf("load global config: %w", err)
-	}
-
 	// If any bin profile has a BinFile configured, try to auto-resolve.
 	// If --os is set, narrow to that profile; otherwise try all profiles.
-	for osKey, p := range globalCfg.BinProfiles {
+	for osKey, p := range localCfg.BinProfiles {
 		if shipOS != "" && osKey != shipOS {
 			continue
 		}
@@ -235,10 +245,6 @@ func resolveShipContext(args []string) (string, *config.BinProfile, error) {
 	}
 
 	// Fall back to bin-dir / picker.
-	localCfg, err := config.LoadLocal()
-	if err != nil {
-		return "", nil, fmt.Errorf("load local config: %w", err)
-	}
 	if localCfg.BinDir == "" {
 		return "", nil, fmt.Errorf("no binary specified and no bin-dir or bin_file configured\nhint: run `teleport config set bin-dir ./bin` or pass the binary path directly")
 	}

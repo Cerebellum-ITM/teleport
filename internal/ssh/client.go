@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -293,6 +294,37 @@ func (c *Client) ListDirs(path string) ([]string, error) {
 	return dirs, nil
 }
 
+// Mkdir creates dir on the remote. It is idempotent: an already-existing
+// directory is not an error. Parent directories must already exist.
+func (c *Client) Mkdir(dir string) error {
+	if err := c.SFTP.Mkdir(dir); err != nil {
+		// Tolerate "already exists": re-stat and accept if it is a dir.
+		if info, statErr := c.SFTP.Stat(dir); statErr == nil && info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("mkdir remote %s: %w", dir, err)
+	}
+	return nil
+}
+
+// MkdirAll creates dir and any missing parent directories on the remote.
+func (c *Client) MkdirAll(dir string) error {
+	if err := c.SFTP.MkdirAll(dir); err != nil {
+		return fmt.Errorf("mkdir remote %s: %w", dir, err)
+	}
+	return nil
+}
+
+// Chmod sets the mode of remotePath. Needed because SFTP.Create keeps the mode
+// of an already-existing remote file, so an overwrite would otherwise inherit a
+// stale mode.
+func (c *Client) Chmod(remotePath string, mode os.FileMode) error {
+	if err := c.SFTP.Chmod(remotePath, mode); err != nil {
+		return fmt.Errorf("chmod remote %s: %w", remotePath, err)
+	}
+	return nil
+}
+
 func (c *Client) UploadFile(localPath, remotePath string) error {
 	src, err := os.Open(localPath)
 	if err != nil {
@@ -440,6 +472,146 @@ func (c *Client) RemoteSHA256(remotePath string) (string, error) {
 		return "", fmt.Errorf("read remote %s: %w", remotePath, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// RemoteStat is the metadata push needs to decide whether a file may have
+// changed: its size, and its modification time as a Unix timestamp.
+type RemoteStat struct {
+	Size    int64
+	ModTime int64
+}
+
+// RemoteStatMany returns the size and mtime of every path that exists remotely,
+// in one command per batch. It is the cheap first question — metadata, not
+// content — that lets a caller avoid hashing files whose size already proves they
+// differ. Paths that do not exist are absent from the result.
+func (c *Client) RemoteStatMany(paths []string, onProgress func(done, total int)) (map[string]RemoteStat, error) {
+	stats := make(map[string]RemoteStat, len(paths))
+	batch := remoteBatchSize(len(paths))
+	for start := 0; start < len(paths); start += batch {
+		end := start + batch
+		if end > len(paths) {
+			end = len(paths)
+		}
+
+		quoted := make([]string, 0, end-start)
+		for _, p := range paths[start:end] {
+			quoted = append(quoted, ShellQuote(p))
+		}
+		args := strings.Join(quoted, " ")
+		// The GNU and BSD spellings run back to back with stderr discarded: the
+		// one the server has answers, the other prints nothing. Probing first
+		// would cost a round trip to learn what the output already tells us.
+		cmd := "{ stat -c '%s %Y %n' -- " + args + " 2>/dev/null; " +
+			"stat -f '%z %m %N' -- " + args + " 2>/dev/null; } || true"
+		out, err := c.RunCommand(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("remote stat: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			name, st, ok := parseStatLine(line)
+			if ok {
+				stats[name] = st
+			}
+		}
+		if onProgress != nil {
+			onProgress(end, len(paths))
+		}
+	}
+	return stats, nil
+}
+
+// parseStatLine splits one `stat` output line into its path and metadata. Both
+// formats emit "<size> <mtime> <path>", and the path may contain spaces.
+func parseStatLine(line string) (name string, st RemoteStat, ok bool) {
+	fields := strings.SplitN(strings.TrimSpace(line), " ", 3)
+	if len(fields) != 3 {
+		return "", RemoteStat{}, false
+	}
+	size, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return "", RemoteStat{}, false
+	}
+	mtime, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return "", RemoteStat{}, false
+	}
+	if fields[2] == "" {
+		return "", RemoteStat{}, false
+	}
+	return fields[2], RemoteStat{Size: size, ModTime: mtime}, true
+}
+
+// remoteBatchSize picks how many paths go into one remote command. Small batches
+// while there are few paths, so a caller can report movement; large ones once
+// there are thousands, where the round trip dominates and hundreds of them would
+// cost more than the work. Every size stays well below the shell's argument limit.
+func remoteBatchSize(total int) int {
+	switch {
+	case total <= 50:
+		return 10
+	case total <= 500:
+		return 50
+	default:
+		return 200
+	}
+}
+
+// RemoteSHA256Many hashes paths on the server and returns the lowercase hex
+// SHA256 of each one, so only the digests cross the network instead of the file
+// contents. Paths that are missing or unreadable are absent from the result
+// rather than an error, which is how a caller learns they need uploading.
+func (c *Client) RemoteSHA256Many(paths []string, onProgress func(done, total int)) (map[string]string, error) {
+	hashes := make(map[string]string, len(paths))
+	batch := remoteBatchSize(len(paths))
+	for start := 0; start < len(paths); start += batch {
+		end := start + batch
+		if end > len(paths) {
+			end = len(paths)
+		}
+
+		quoted := make([]string, 0, end-start)
+		for _, p := range paths[start:end] {
+			quoted = append(quoted, ShellQuote(p))
+		}
+		args := strings.Join(quoted, " ")
+		// sha256sum exits non-zero when any path is missing but still prints the
+		// others, and BSD/macOS servers only ship shasum; `|| true` keeps both
+		// cases out of RunCommand's error path.
+		cmd := "if command -v sha256sum >/dev/null 2>&1; then sha256sum -- " + args +
+			"; else shasum -a 256 -- " + args + "; fi 2>/dev/null || true"
+		out, err := c.RunCommand(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("remote sha256: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			hash, name, ok := parseHashLine(line)
+			if ok {
+				hashes[name] = hash
+			}
+		}
+		if onProgress != nil {
+			onProgress(end, len(paths))
+		}
+	}
+	return hashes, nil
+}
+
+// parseHashLine splits one `sha256sum` output line into hash and path. The
+// leading `*` of binary mode and the `\` GNU coreutils prepends for a path
+// holding a backslash or newline are both stripped.
+func parseHashLine(line string) (hash, name string, ok bool) {
+	line = strings.TrimSuffix(strings.TrimSpace(line), "\r")
+	line = strings.TrimPrefix(line, "\\")
+	hash, name, found := strings.Cut(line, " ")
+	if !found || len(hash) != sha256.Size*2 {
+		return "", "", false
+	}
+	name = strings.TrimPrefix(strings.TrimSpace(name), "*")
+	if name == "" {
+		return "", "", false
+	}
+	return strings.ToLower(hash), name, true
 }
 
 // Remove deletes remotePath. Missing files are not an error.

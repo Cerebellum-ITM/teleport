@@ -102,6 +102,9 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	steps := newStepLog("beam")
+	target := fmt.Sprintf("%s:%s", profile.Host, profile.Path)
+
 	branch, err := resolveBranch(beamBranch)
 	if err != nil {
 		return err
@@ -110,16 +113,20 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	steps.Start("scan", "commits ahead of "+branch)
 	commits, err := git.CommitsAheadOf(branch)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	if len(commits) == 0 {
+		steps.Done("no commits ahead")
 		if !beamClean {
 			fmt.Printf("Nothing to beam — no local commits on %s ahead of remote.\n", branch)
 		}
 		return nil
 	}
+	steps.Done(fmt.Sprintf("%d commit(s) ahead", len(commits)))
 
 	// Prune the recorded beamed-set for this profile to the commits still ahead
 	// (rebased/pushed SHAs fall off), then pre-select the unsent ones.
@@ -181,14 +188,18 @@ func runBeam(cmd *cobra.Command, args []string) error {
 		shas = append(shas, selectedCommits[i].SHA)
 	}
 
+	steps.Start("collect", fmt.Sprintf("%d commit(s) selected", len(selectedCommits)))
 	allChanges, commitPaths, err := git.FilesInCommits(shas)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	if len(allChanges) == 0 {
+		steps.Done("no files touched")
 		fmt.Println("Selected commits touched no files.")
 		return nil
 	}
+	steps.Done(fmt.Sprintf("%d file(s)", len(allChanges)))
 
 	// The file-diff viewer (Unit 18) is visual review only: headless skips it
 	// and sends every changed path directly, without opening the tea.Program.
@@ -207,11 +218,14 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	}
 
 	if client == nil {
+		steps.Start("connect", target)
 		client, err = connectToProfile(profile)
 		if err != nil {
+			steps.Fail()
 			return err
 		}
 		defer client.Close()
+		steps.Done("")
 	}
 
 	var toUpload []git.FileChange
@@ -254,7 +268,10 @@ func runBeam(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		header := fmt.Sprintf("Beaming %d file(s) to %s:%s", len(toUpload), profile.Host, profile.Path)
+		steps.Start("upload", fmt.Sprintf("%d file(s)", len(toUpload)))
+		steps.Detach()
+
+		header := fmt.Sprintf("Beaming %d file(s) to %s", len(toUpload), target)
 		send := func(path string) error {
 			fc := byPath[path]
 			content, err := git.FileAtCommit(fc.SHA, fc.Path)
@@ -270,21 +287,29 @@ func runBeam(cmd *cobra.Command, args []string) error {
 			failed, err = tui.RunBeamSendPlain(header, groups, send)
 		}
 		if err != nil {
+			steps.Fail()
 			return err
 		}
+		steps.Done("")
 		for _, p := range failed {
 			failedPaths[p] = true
 		}
 	}
 
+	if len(toDelete) > 0 {
+		steps.Start("delete", fmt.Sprintf("%d file(s)", len(toDelete)))
+	}
 	for _, c := range toDelete {
 		remote := filepath.Join(profile.Path, c.Path)
 		if err := client.Remove(remote); err != nil {
 			log.Error("remove failed", "path", remote, "err", err)
 			failedPaths[c.Path] = true
 		} else {
-			log.Info("removed", "path", remote)
+			log.Debug("removed", "path", remote)
 		}
+	}
+	if len(toDelete) > 0 {
+		steps.Done("")
 	}
 
 	// Record commits as sent: a commit counts only if every path it touched was
@@ -319,24 +344,32 @@ func runBeam(cmd *cobra.Command, args []string) error {
 	}
 	res := beamResult{
 		Command: "beam",
-		Target:  fmt.Sprintf("%s:%s", profile.Host, profile.Path),
+		Target:  target,
 		Commits: shortSHAs,
 		Sent:    len(sentFiles),
+		Phases:  steps.Durations(),
 		Files:   sentFiles,
 		Actions: actions,
 	}
-	emit(res, func() {}) // human path already printed progress + summary inline
+	emit(res, func() {
+		line := fmt.Sprintf("  %s beamed %d file(s) from %d commit(s) → %s", okMark, len(sentFiles), len(selectedCommits), target)
+		if len(toDelete) > 0 {
+			line += fmt.Sprintf(" · %d removed", len(toDelete))
+		}
+		fmt.Println(line + elapsedStyle.Render("  "+steps.Elapsed().Round(time.Millisecond).String()))
+	})
 	return actErr
 }
 
 // beamResult is the --json shape for beam.
 type beamResult struct {
-	Command string         `json:"command"`
-	Target  string         `json:"target"`
-	Commits []string       `json:"commits"`
-	Sent    int            `json:"sent"`
-	Files   []string       `json:"files"`
-	Actions []actionResult `json:"actions,omitempty"`
+	Command string             `json:"command"`
+	Target  string             `json:"target"`
+	Commits []string           `json:"commits"`
+	Sent    int                `json:"sent"`
+	Phases  map[string]float64 `json:"phases,omitempty"`
+	Files   []string           `json:"files"`
+	Actions []actionResult     `json:"actions,omitempty"`
 }
 
 func runChainedSync(client *sshpkg.Client, profile config.Profile, includeUntracked bool) error {

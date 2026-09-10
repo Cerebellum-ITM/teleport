@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -188,6 +189,28 @@ func printConfigOverview(local *config.LocalConfig) error {
 		fmt.Fprintf(&b, "  bin-dir          = %s\n", local.BinDir)
 	} else {
 		fmt.Fprintf(&b, "  bin-dir          = %s\n", descStyle.Render("<unset>"))
+	}
+
+	if len(local.BinProfiles) > 0 {
+		osNames := make([]string, 0, len(local.BinProfiles))
+		for o := range local.BinProfiles {
+			osNames = append(osNames, o)
+		}
+		sort.Strings(osNames)
+
+		fmt.Fprintf(&b, "\n  %s %s\n",
+			iconStyle.Render(string(iconGear)),
+			sectionStyle.Render("bin profiles"))
+		for _, o := range osNames {
+			p := local.BinProfiles[o]
+			fmt.Fprintf(&b, "    %-8s %s:%s\n", o, p.Host, p.BinPath)
+			if p.RemoteName != "" {
+				fmt.Fprintf(&b, "             %s\n", descStyle.Render("as "+p.RemoteName))
+			}
+			if p.BinFile != "" {
+				fmt.Fprintf(&b, "             %s\n", descStyle.Render("from "+p.BinFile))
+			}
+		}
 	}
 
 	if defaultProfileDisplay != "" {

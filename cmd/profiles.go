@@ -21,12 +21,17 @@ func runProfiles(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	if len(cfg.Profiles) == 0 && len(cfg.BinProfiles) == 0 {
+	localCfg, _ := config.LoadLocal()
+	var localBin map[string]config.BinProfile
+	if localCfg != nil {
+		localBin = localCfg.BinProfiles
+	}
+
+	if len(cfg.Profiles) == 0 && len(localBin) == 0 && len(cfg.BinProfiles) == 0 {
 		fmt.Println("No profiles configured. Run `teleport init` to create one.")
 		return nil
 	}
 
-	localCfg, _ := config.LoadLocal()
 	defaultProfile := ""
 	if localCfg != nil {
 		defaultProfile = localCfg.DefaultProfile
@@ -50,8 +55,27 @@ func runProfiles(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	if len(cfg.BinProfiles) > 0 {
+	if len(localBin) > 0 {
 		if len(cfg.Profiles) > 0 {
+			fmt.Println()
+		}
+		osNames := make([]string, 0, len(localBin))
+		for o := range localBin {
+			osNames = append(osNames, o)
+		}
+		sort.Strings(osNames)
+
+		fmt.Println("Bin profiles:")
+		for _, o := range osNames {
+			p := localBin[o]
+			fmt.Printf("  %-20s  %s:%s\n", o, p.Host, p.BinPath)
+		}
+	}
+
+	// Deprecated global bin profiles: still shown so the user can see what is
+	// pending migration into a project.
+	if len(cfg.BinProfiles) > 0 {
+		if len(cfg.Profiles) > 0 || len(localBin) > 0 {
 			fmt.Println()
 		}
 		osNames := make([]string, 0, len(cfg.BinProfiles))
@@ -60,7 +84,7 @@ func runProfiles(_ *cobra.Command, _ []string) error {
 		}
 		sort.Strings(osNames)
 
-		fmt.Println("Bin profiles:")
+		fmt.Println("Bin profiles (deprecated — global):")
 		for _, o := range osNames {
 			p := cfg.BinProfiles[o]
 			fmt.Printf("  %-20s  %s:%s\n", o, p.Host, p.BinPath)

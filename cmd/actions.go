@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	actionNameFlag    string
 	actionRunFlag     []string
 	actionCwdFlag     string
 	actionTimeoutFlag string
@@ -61,6 +62,7 @@ func init() {
 		c.Flags().StringVar(&actionTimeoutFlag, "timeout", "", "per-step timeout, e.g. 5m (default 10m)")
 		c.Flags().BoolVar(&actionConfirmFlag, "confirm", false, "prompt before running this action")
 	}
+	actionsAddCmd.Flags().StringVar(&actionNameFlag, "name", "", "the action's name; required headless")
 	actionsRemoveCmd.Flags().BoolVarP(&actionYesFlag, "yes", "y", false, "skip the removal confirmation")
 	actionsCmd.AddCommand(actionsAddCmd, actionsListCmd, actionsEditCmd, actionsRemoveCmd)
 }
@@ -253,7 +255,13 @@ func addOrEditAction(cmd *cobra.Command, globalCfg *config.GlobalConfig, profile
 func addActionHeadless(cmd *cobra.Command, globalCfg *config.GlobalConfig, profile config.Profile, profileName, editName string, existing config.Action) error {
 	name := editName
 	if name == "" {
-		return errNeedsTTY("pass a profile and use flags: --run is required to add an action headless")
+		name = strings.TrimSpace(actionNameFlag)
+	}
+	if name == "" {
+		return errNeedsTTY("pass --name <action> to add an action headless")
+	}
+	if err := validateActionName(name); err != nil {
+		return err
 	}
 	steps := actionRunFlag
 	if len(steps) == 0 {
@@ -290,6 +298,19 @@ func addActionHeadless(cmd *cobra.Command, globalCfg *config.GlobalConfig, profi
 	return nil
 }
 
+// validateActionName holds the naming rules shared by the wizard and the
+// headless --name path: non-empty, no whitespace.
+func validateActionName(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+	if strings.ContainsAny(s, " \t") {
+		return fmt.Errorf("name cannot contain spaces")
+	}
+	return nil
+}
+
 func runNameForm(name *string, profile config.Profile, editName string) error {
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewInput().
@@ -297,13 +318,10 @@ func runNameForm(name *string, profile config.Profile, editName string) error {
 			Description("e.g. deploy, restart, logs").
 			Value(name).
 			Validate(func(s string) error {
+				if err := validateActionName(s); err != nil {
+					return err
+				}
 				s = strings.TrimSpace(s)
-				if s == "" {
-					return fmt.Errorf("name cannot be empty")
-				}
-				if strings.ContainsAny(s, " \t") {
-					return fmt.Errorf("name cannot contain spaces")
-				}
 				if _, exists := profile.Actions[s]; exists && s != editName {
 					return fmt.Errorf("action %q already exists", s)
 				}

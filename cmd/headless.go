@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
+	"github.com/pascualchavez/teleport/internal/theme"
+	"github.com/pascualchavez/teleport/internal/tui"
 	"golang.org/x/term"
 )
 
@@ -47,6 +50,21 @@ func interactive() bool {
 // genuinely interactive session (real TTY, no --no-input) that is not
 // emitting JSON. Otherwise progress is written plainly to stderr.
 func useTUI() bool { return interactive() && !jsonOut }
+
+var (
+	// okMark and elapsedStyle dress a command's final summary line, the one that
+	// states the result after the phases have scrolled by.
+	okMark       = lipgloss.NewStyle().Foreground(theme.Success).Render("✓")
+	elapsedStyle = lipgloss.NewStyle().Foreground(theme.TextDim)
+)
+
+// newStepLog builds the process log for a command: colored and live when the
+// session owns a terminal, plain `[command]` lines on stderr otherwise so stdout
+// stays a single --json object. --verbose also selects the plain form, because the
+// per-file debug lines it prints would land inside a live phase line.
+func newStepLog(command string) *tui.StepLog {
+	return tui.NewStepLog(command, !useTUI() || verbose, quietOut)
+}
 
 // emit prints v as a single JSON object to stdout when --json is set;
 // otherwise it calls human to render the normal terminal output. Decorative

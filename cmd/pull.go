@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/pascualchavez/teleport/internal/git"
@@ -31,37 +32,50 @@ func init() {
 }
 
 func runPull(_ *cobra.Command, args []string) error {
+	steps := newStepLog("pull")
+
+	steps.Start("scan", "local working tree")
 	dirty, err := git.HasUncommittedChanges()
 	if err != nil {
+		steps.Fail()
 		return fmt.Errorf("git status: %w", err)
 	}
 	if dirty {
+		steps.Fail()
 		return fmt.Errorf("uncommitted changes in working tree\nhint: commit or stash your changes before pulling")
 	}
+	steps.Done("clean")
 
 	profile, _, err := resolveProfile(args)
 	if err != nil {
 		return err
 	}
 
+	steps.Start("connect", fmt.Sprintf("%s:%s", profile.Host, profile.Path))
 	client, err := connectToProfile(profile)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	defer client.Close()
+	steps.Done("")
 
+	steps.Start("compare", "remote HEAD and working tree")
 	localHEAD, err := git.LocalHEAD()
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	remoteHEAD, err := client.RunCommand(
 		"git -C " + sshpkg.ShellQuote(profile.Path) + " rev-parse HEAD",
 	)
 	if err != nil {
+		steps.Fail()
 		return fmt.Errorf("get remote HEAD: %w", err)
 	}
 	remoteHEAD = strings.TrimSpace(remoteHEAD)
 	if localHEAD != remoteHEAD {
+		steps.Fail()
 		return fmt.Errorf(
 			"remote is not at the same commit\nlocal:  %s\nremote: %s\nhint: use `git pull` to sync your commits first",
 			localHEAD[:7], remoteHEAD[:7],
@@ -72,6 +86,7 @@ func runPull(_ *cobra.Command, args []string) error {
 		"git -C " + sshpkg.ShellQuote(profile.Path) + " status --porcelain=v1 -z",
 	)
 	if err != nil {
+		steps.Fail()
 		return fmt.Errorf("remote git status: %w", err)
 	}
 
@@ -92,11 +107,16 @@ func runPull(_ *cobra.Command, args []string) error {
 
 	target := fmt.Sprintf("%s:%s", profile.Host, profile.Path)
 	if len(entries) == 0 {
-		emit(pullResult{Command: "pull", Target: target, Pulled: 0, Files: []string{}}, func() {
+		steps.Done("remote is clean")
+		emit(pullResult{Command: "pull", Target: target, Pulled: 0, Phases: steps.Durations(), Files: []string{}}, func() {
 			fmt.Println("Already up to date.")
 		})
 		return nil
 	}
+	steps.Done(fmt.Sprintf("%d dirty file(s) on the remote", len(entries)))
+
+	steps.Start("download", fmt.Sprintf("%d file(s)", len(entries)))
+	steps.Detach()
 
 	// Decoration goes to stderr under --json so stdout stays a clean object.
 	out := os.Stdout
@@ -133,8 +153,14 @@ func runPull(_ *cobra.Command, args []string) error {
 	}
 
 	pulled := len(entries) - failed
-	emit(pullResult{Command: "pull", Target: target, Pulled: pulled, Files: files}, func() {
-		fmt.Printf("\nPulled %d file(s) from %s:%s\n", pulled, profile.Host, profile.Path)
+	if failed > 0 {
+		steps.Fail()
+	} else {
+		steps.Done("")
+	}
+	emit(pullResult{Command: "pull", Target: target, Pulled: pulled, Phases: steps.Durations(), Files: files}, func() {
+		fmt.Printf("\n  %s pulled %d file(s) from %s%s\n",
+			okMark, pulled, target, elapsedStyle.Render("  "+steps.Elapsed().Round(time.Millisecond).String()))
 	})
 
 	if failed > 0 {
@@ -145,8 +171,9 @@ func runPull(_ *cobra.Command, args []string) error {
 
 // pullResult is the --json shape for pull.
 type pullResult struct {
-	Command string   `json:"command"`
-	Target  string   `json:"target"`
-	Pulled  int      `json:"pulled"`
-	Files   []string `json:"files"`
+	Command string             `json:"command"`
+	Target  string             `json:"target"`
+	Pulled  int                `json:"pulled"`
+	Phases  map[string]float64 `json:"phases,omitempty"`
+	Files   []string           `json:"files"`
 }

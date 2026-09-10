@@ -25,7 +25,7 @@ teleport sync      # upload changed files → iterate → commit clean
    with a live progress bar. Add `-u` to include untracked files too.
 4. Iterate until satisfied, then commit cleanly.
 
-## Three ways to ship code
+## Four ways to ship code
 
 - **`sync`** — pushes your *working-tree* changes (everything modified since
   `HEAD`). Fast, dirty, throwaway: perfect for the edit-test-edit loop.
@@ -37,6 +37,10 @@ teleport sync      # upload changed files → iterate → commit clean
   **same hash and message** (transfers git *objects*, not file contents). The
   remote ends clean at the new HEAD, its `git log` matching yours. Use it when
   the box runs from a git checkout and you want it in lockstep with local git.
+- **`push`** — pushes *the paths you name*, exactly as given, **without asking
+  git anything**. The escape hatch for build output and artifacts that
+  `.gitignore` hides (`web/dist`, `target/release`, a `.env` the repo never
+  tracks) — the only transfer command that can send them.
 
 ## Commands
 
@@ -50,6 +54,8 @@ teleport sync      # upload changed files → iterate → commit clean
 | `teleport actions add/list/edit/remove` | Manage a profile's remote actions (interactive wizard or flags) |
 | `teleport status [profile]` | Compare local files against the remote by SHA256. `-p` checks only unpushed commits + dirty working tree |
 | `teleport clean [profile]` | Discard dirty changes on the remote (`git checkout` + `git clean`). `-y` skips the prompt, `-x` also removes gitignored files |
+| `teleport push <path>... [profile]` | Upload the given paths as-is, ignoring git entirely (the only way to send gitignored files). Files the remote already has are skipped; `-f` re-sends them. `--to` picks the destination, `-x` excludes, `--dry-run` previews |
+| `teleport exclude [list\|add\|remove]` | Manage the paths `push` skips in this project (`.git` is skipped by default) |
 | `teleport pull [profile]` | Download remote changes back to the local working tree |
 | `teleport ship [bin]` | Deploy a local binary to its OS-matching bin profile |
 | `teleport shell [profile]` | Open an interactive shell on the remote, already in the profile's path |
@@ -221,6 +227,12 @@ three steps (SFTP upload to `/tmp` → `chmod +x` → `mv` into place, with
 automatic `sudo` escalation when needed). The target OS is auto-detected from
 the binary's magic bytes (ELF → linux, Mach-O → macos, PE → windows).
 
+Bin profiles (host, remote `bin/` path, optional remote name and source file)
+are **per-project**: they live in this directory's local config, so different
+repos can ship different binaries to different servers. A pre-0.10 global
+`[bin_profiles]` section is deprecated — the first interactive `ship`/`init`
+offers to migrate it into the project.
+
 <p align="center">
   <img src="demo/gifs/ship.gif" alt="teleport ship: upload, rename, chmod, and move a binary into place" width="820">
 </p>
@@ -232,6 +244,103 @@ teleport ship --os linux        # override OS detection
 teleport ship --to ~/.local/bin # override the remote bin dir for this run
 teleport ship --name mycli      # rename the binary on the remote
 ```
+
+## Push — upload anything, git or not
+
+`teleport push <local-path>... [profile]` uploads the paths you name **exactly as
+given**. It never reads the git index or `.gitignore`, which makes it the only
+transfer command that can send a build directory, a compiled asset bundle, or any
+other artifact git deliberately hides.
+
+```sh
+teleport push web/dist                          # → <profile path>/web/dist
+teleport push web/dist --to web/dist.new        # one path: --to is the exact destination
+teleport push a.env b.env --to config           # many paths: --to is a directory
+teleport push web/dist --to dist.new --then swap  # upload, then swap it in
+teleport push web/dist --dry-run                # print the plan, connect to nothing
+teleport push web/dist -f                       # re-send everything, unchanged included
+```
+
+### How it differs from `sync` and `ship`
+
+This is the exact point where it's easy to reach for the wrong command, so, in
+writing:
+
+| | Reads `.gitignore` | Accepts | Notes |
+|---|---|---|---|
+| `sync` | **Yes** — an ignored path is skipped **silently** and the run still reports success | git-tracked files (`-u` adds untracked, but *still not ignored ones*) | The git-aware command. Its semantics are deliberate and are not changing |
+| `push` | **No** — uploads precisely what you name | any file or directory | The explicit escape hatch |
+| `ship` | n/a | **executables only** — validates ELF/Mach-O/PE magic and rejects anything else | A binary channel that verifies it got a binary |
+
+If `sync -u` seemed to "lose" a file, it was gitignored. That is what `push` is
+for.
+
+### Excluding paths
+
+```sh
+teleport exclude                       # browse the project tree and pick what to skip
+teleport exclude list                  # the effective set, and where each entry comes from
+teleport exclude add node_modules '*.log'
+teleport exclude remove '*.log'
+```
+
+The picker walks the tree: `→` enters a folder, `←` goes back up, `tab` marks the
+entry under the cursor, `enter` saves. A nested pick is stored anchored to that one
+place (`web/node_modules`), a top-level pick as a bare name that matches anywhere.
+Patterns it never showed — a glob like `*.log`, or entries in folders you did not
+open — are left alone, so the picker and `add`/`remove` can be mixed freely.
+
+The list lives in the **project's** local config (`push_exclude` in
+`~/.config/teleport/projects/<hash>.toml`), so it follows the working directory the
+way the sync profile does. `--exclude` adds to it for one run; `--no-exclude`
+ignores everything, defaults included.
+
+### Rules
+
+- **The profile is the boundary.** `--to` is always relative to the profile's
+  remote `path`; absolute values are rejected, and so is anything that would
+  escape the profile directory via `..`. `push` cannot write elsewhere on the box.
+- **Without `--to`**, the destination mirrors the path relative to your current
+  directory: `push web/dist` from the repo root lands at `<path>/web/dist`.
+- **Directories are recursive**, and every directory in the tree (empty ones
+  included) is created on the remote.
+- **`.git` is excluded by default**, along with this project's saved list and any
+  `-x`/`--exclude` globs. A pattern without a slash matches a base name at any
+  depth (`-x node_modules`, `-x '*.log'`); one with a slash matches the path as you
+  named it (`-x 'base/*.deb'`). A matching directory is pruned, never walked.
+  `--no-exclude` sends everything, `.git` included. Naming an excluded path
+  directly is an error rather than a silent no-op.
+- **No deletion.** There is no rsync-style `--delete` — removing files remotely is
+  a different class of risk. For a clean replace, push to a new directory and swap
+  it in an action: `push dist --to dist.new --then swap`.
+- **Symlinks are followed** and their content uploaded. A broken symlink or a
+  symlink cycle is a loud error, and it aborts the run *before* anything uploads.
+- **Only the exec bit is preserved** (`0755` if the local file is executable,
+  `0644` otherwise). No unconditional `chmod +x` — that's `ship`'s job.
+- **Files the remote already has are skipped**, and deciding that is cheap. Each
+  run asks the cheapest question that can settle a file: one batched remote
+  `stat` first, so a missing file or a different size needs no hash at all; then a
+  local cache, so a destination already proven identical — same size and mtime on
+  both ends since it was verified — is skipped without reading a byte. Only what
+  is still ambiguous is hashed, and that hash is computed **on the server** (one
+  batched command, so digests cross the network, never contents). A second push of
+  an unchanged tree therefore costs one `stat` command, and a large artifact that
+  did not change is neither resent nor re-read. Skipped files are listed with a
+  `↷`, and `-v` logs why each file is sent or skipped. `-f`/`--force` skips every
+  check and uploads everything.
+- **Every upload is size-verified** (a truncated transfer fails). `--checksum`
+  additionally compares SHA256 on both ends after writing, and makes the skip
+  decision hash instead of trusting the cache — the escape hatch for a file edited
+  in place without its size or mtime changing.
+- **`last sync` is not touched.** That timestamp tracks git parity with the
+  remote; `push` says nothing about git.
+
+Headless: `--json` prints one result object (`sent`, `skipped`, `excluded`, `bytes`,
+`verified`, `files[]` — each entry flagged `skipped` when it was already on the
+remote — plus nested `actions[]` when `--then` is used) and `--dry-run` exits
+`0` without opening a connection. Because a dry run connects to nothing, it
+cannot know what the remote already has: it lists the whole plan, and the real
+run is what skips.
 
 ## Shell — jump onto the remote
 
@@ -249,11 +358,14 @@ teleport shell           # uses the local default profile
 teleport shell staging   # use a specific profile
 ```
 
-It runs `ssh -t <host> "cd <path> && exec zsh"` and **replaces its own process**
-with the system `ssh` binary, so the session behaves and performs exactly like a
-hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and no teleport
-process lingers while you're connected. The host is resolved by `ssh` itself
-from `~/.ssh/config`.
+It runs `ssh -t <host> "cd <path> && exec <shell>"` and **replaces its own
+process** with the system `ssh` binary, so the session behaves and performs
+exactly like a hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and
+no teleport process lingers while you're connected. The host is resolved by
+`ssh` itself from `~/.ssh/config`. The remote shell is the first of `zsh`,
+`bash`, `sh` that exists on the box, so a server without `zsh` still drops you
+into a shell; if none of the three is installed you get
+`teleport: no shell found on the remote` and exit code 127.
 
 ## Actions — automate remote processes
 
@@ -272,6 +384,13 @@ teleport actions add            # wizard on the default profile
 teleport actions list           # show the profile's actions
 teleport actions edit deploy    # re-open the wizard, pre-filled
 teleport actions remove deploy
+```
+
+Or headless, naming the action with `--name` (the positional is the profile):
+
+```sh
+teleport actions add staging --no-input --name doctor \
+  --run "uname -m" --run "df -h ." --timeout 2m
 ```
 
 Or write them straight into `~/.config/teleport/config.toml`:
@@ -302,9 +421,39 @@ The first step that exits non-zero aborts the action (and the chain). Under
 `--json` the logs go to stderr and the result nests an `actions` array; headless,
 an action with `confirm = true` needs `-y` or it fails closed (exit `2`).
 
+## Reading the output
+
+A command tells you what it is doing as one chronological stream. Phases carry a
+`▸`, files carry their own marker, and nothing is silent:
+
+```
+  ▸ scan      13 file(s) · 275.4 MB · 1 excluded                   0.3s
+  ▸ connect   example:/srv/app                                     0.4s
+  ▸ compare   stat 13 · cache 10 · hash 3                          2.1s
+  ↷ base/entrypoint.sh
+  ▸ upload    3 file(s) · 275.1 MB
+  ✓ base/odoo_19.0+e.20260824_all.deb
+  [=====================================]  3/3  100%  00:12
+  ✓ pushed 3 file(s) · 275.1 MB · verified (size) · skipped 10      14.9s
+```
+
+The phase names are shared across the transfer commands — `scan`, `connect`,
+`compare`, `upload`, then the actions — so the same work reads the same way
+everywhere. A running phase rewrites its own line, which is how a long `compare`
+over a large artifact shows `hashing 2/13` instead of looking hung.
+
+The transfer view below them is a **fixed eight rows** of recent files plus the
+bar, not a full-height pane: it scrolls the terminal by its own height and no
+more, so the phases above stay where you can read them.
+
+Under `--json`, or with no TTY, the same stream becomes `[push] phase: detail`
+lines on stderr. `-v` adds the per-file decisions (`cache hit`, `size differs`,
+`content differs`) and switches the phases to one line each, since a live line
+cannot share the terminal with log output. `-q` leaves only the result.
+
 ## Scripting (headless)
 
-Every command runs without a terminal, for CI and deploy pipelines. Two
+Every command runs without a terminal, for CI and deploy pipelines. Three
 persistent flags:
 
 - `--no-input` — never prompt; resolve from flags or **fail closed** (exit `2`)
@@ -312,7 +461,10 @@ persistent flags:
   picker or confirmation. It's also implied automatically when stdin isn't a TTY.
 - `--json` — print a single JSON result object to stdout (drift, files sent,
   mirror summary…) and route all decoration to stderr, so callers parse instead
-  of scraping ANSI.
+  of scraping ANSI. The object carries `phases` with each phase's duration in
+  seconds, so a slow pipeline step is attributable.
+- `-q`/`--quiet` — print only the final result and errors, dropping the phase
+  log. A failed phase is still named: a silenced command must say where it died.
 
 ```sh
 teleport status --json          # {"target":…,"in_sync":false,"total":146,"drift":[…]}
@@ -320,6 +472,7 @@ teleport beam -a --no-input     # send unsent commits, no picker (exit 2 if -a i
 teleport mirror -a --no-input   # advance the remote to HEAD, unattended
 teleport clean --no-input       # --no-input implies -y; never discards without an explicit opt-in
 teleport mirror -a --then deploy --no-input --json   # mirror + run 'deploy', logs on stderr
+teleport push web/dist --to dist.new --then swap --no-input --json   # upload a build, then swap it
 ```
 
 Exit codes: `0` success / in sync · `1` execution error, or drift detected by

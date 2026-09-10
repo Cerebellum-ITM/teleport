@@ -20,6 +20,23 @@ type SyncFileDone struct {
 
 type syncTickMsg time.Time
 
+// syncLogRows is how many completed files the live frame shows. It is small and
+// fixed on purpose: bubbletea's inline renderer owns the lines its frame covers
+// and paints over whatever was there, so a frame as tall as the terminal — what
+// this view used to render, blank-padded — erased the phase log above it on its
+// first paint. Eight rows show the recent files and leave the log in place.
+const syncLogRows = 8
+
+// syncLogWindow is how many completed files the frame shows for a transfer of
+// total files: the cap, or fewer when there is less to show, so a two-file sync
+// does not render six blank rows.
+func syncLogWindow(total int) int {
+	if total < syncLogRows {
+		return total
+	}
+	return syncLogRows
+}
+
 var (
 	spOKStyle     = lipgloss.NewStyle().Foreground(theme.Success)
 	spErrStyle    = lipgloss.NewStyle().Foreground(theme.Danger)
@@ -45,17 +62,21 @@ type SyncProgress struct {
 	total  int
 	start  time.Time
 	width  int
-	height int
-	groups []BeamGroup // when set, files are rendered grouped by commit (beam)
+
+	// groups, when set, label each path with the commit it came from (beam). The
+	// label is printed once, above the first file of that commit.
+	groups      []BeamGroup
+	groupOf     map[string]int
+	headerShown map[int]bool
 }
 
 func NewSyncProgress(header string, total int) SyncProgress {
 	return SyncProgress{
-		header: header,
-		total:  total,
-		start:  time.Now(),
-		width:  80,
-		height: 24,
+		header:      header,
+		total:       total,
+		start:       time.Now(),
+		width:       80,
+		headerShown: make(map[int]bool),
 	}
 }
 
@@ -73,7 +94,6 @@ func (m SyncProgress) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
 	case SyncFileDone:
 		m.done = append(m.done, msg)
 		if len(m.done) == m.total {
@@ -89,113 +109,57 @@ func (m SyncProgress) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the live frame: the header, the most recent completed files, and
+// the bar. Its height is fixed (see syncLogRows) so the phase log printed above
+// it stays on screen.
 func (m SyncProgress) View() tea.View {
 	var b strings.Builder
+	fmt.Fprintf(&b, "  %s\n", spHeaderStyle.Render(m.header))
 
-	// 3 lines: empty + header + empty
-	// 3 lines: sep + bar + sep
-	// remainder: log area
-	logAreaHeight := m.height - 6
-	if logAreaHeight < 1 {
-		logAreaHeight = 1
+	rows := syncLogWindow(m.total)
+	lines := m.doneLines()
+	if len(lines) > rows {
+		lines = lines[len(lines)-rows:]
+	}
+	for _, l := range lines {
+		b.WriteString(l + "\n")
+	}
+	for i := len(lines); i < rows; i++ {
+		b.WriteString("\n")
 	}
 
-	// Header block
-	fmt.Fprintf(&b, "\n  %s\n\n", spHeaderStyle.Render(m.header))
-
-	// Log area
-	if len(m.groups) > 0 {
-		b.WriteString(m.renderGrouped(logAreaHeight))
-	} else {
-		b.WriteString(m.renderLog(logAreaHeight))
-	}
-
-	// Bar block — no trailing newline on last sep so bubbletea doesn't add a blank line
 	sep := spSepStyle.Render(strings.Repeat("─", m.width))
 	fmt.Fprintf(&b, "%s\n%s\n%s", sep, m.renderBar(), sep)
-
 	return tea.NewView(b.String())
 }
 
-// renderLog is the flat streaming log used by plain sync: last completed files
-// at the bottom, top padded with blanks.
-func (m SyncProgress) renderLog(logAreaHeight int) string {
-	var b strings.Builder
-	startIdx := 0
-	if len(m.done) > logAreaHeight {
-		startIdx = len(m.done) - logAreaHeight
-	}
-	visible := m.done[startIdx:]
-	for i := 0; i < logAreaHeight-len(visible); i++ {
-		b.WriteString("\n")
-	}
-	for _, f := range visible {
+// doneLines renders one line per completed file, in completion order, with the
+// commit's label inserted whenever the commit changes (beam). The label rides in
+// the same list as the files so the window never shows a file without knowing
+// which commit it came from.
+func (m SyncProgress) doneLines() []string {
+	var lines []string
+	lastGroup := -1
+	for _, f := range m.done {
+		indent := "  "
+		if len(m.groups) > 0 {
+			indent = "      "
+			if i, ok := m.groupOf[f.Path]; ok && i != lastGroup {
+				lastGroup = i
+				g := m.groups[i]
+				lines = append(lines, "  "+g.Style.Render(iconCube+"["+g.Short+"]")+" "+
+					spSepStyle.Render("─")+" "+spHeaderStyle.Render(g.Subject))
+			}
+		}
+
 		icon := spIconStyle.Render(fileTypeIcon(f.Path))
 		if f.Err != nil {
-			fmt.Fprintf(&b, "  %s %s %s\n", spErrStyle.Render("✗"), icon, spErrStyle.Render(f.Path))
+			lines = append(lines, fmt.Sprintf("%s%s %s %s", indent, spErrStyle.Render("✗"), icon, spErrStyle.Render(f.Path)))
 		} else {
-			fmt.Fprintf(&b, "  %s %s %s\n", spOKStyle.Render("✓"), icon, f.Path)
+			lines = append(lines, fmt.Sprintf("%s%s %s %s", indent, spOKStyle.Render("✓"), icon, f.Path))
 		}
 	}
-	return b.String()
-}
-
-// renderGrouped is the beam send view: each commit is a colored header followed
-// by its files, each marked ✓ done / ✗ failed / · pending. The visible window
-// follows the most recently completed file so progress stays on screen.
-func (m SyncProgress) renderGrouped(logAreaHeight int) string {
-	res := make(map[string]error, len(m.done))
-	seen := make(map[string]bool, len(m.done))
-	for _, d := range m.done {
-		res[d.Path] = d.Err
-		seen[d.Path] = true
-	}
-
-	var lines []string
-	lastActive := 0
-	for _, g := range m.groups {
-		head := g.Style.Render(iconCube+"["+g.Short+"]") + " " +
-			spSepStyle.Render("─") + " " + spHeaderStyle.Render(g.Subject)
-		lines = append(lines, "  "+head)
-		for _, p := range g.Paths {
-			icon := spIconStyle.Render(fileTypeIcon(p))
-			var status, name string
-			switch {
-			case seen[p] && res[p] != nil:
-				status, name = spErrStyle.Render("✗"), spErrStyle.Render(p)
-				lastActive = len(lines)
-			case seen[p]:
-				status, name = spOKStyle.Render("✓"), p
-				lastActive = len(lines)
-			default:
-				status, name = spSepStyle.Render("·"), spSepStyle.Render(p)
-			}
-			lines = append(lines, fmt.Sprintf("      %s %s %s", status, icon, name))
-		}
-	}
-
-	// Window: end just past the last completed line so it stays visible.
-	end := lastActive + 1
-	if end < logAreaHeight {
-		end = logAreaHeight
-	}
-	if end > len(lines) {
-		end = len(lines)
-	}
-	start := end - logAreaHeight
-	if start < 0 {
-		start = 0
-	}
-	visible := lines[start:end]
-
-	var b strings.Builder
-	for i := 0; i < logAreaHeight-len(visible); i++ {
-		b.WriteString("\n")
-	}
-	for _, l := range visible {
-		b.WriteString(l + "\n")
-	}
-	return b.String()
+	return lines
 }
 
 func (m SyncProgress) renderBar() string {
@@ -403,6 +367,13 @@ func runPlain(header string, files []string, upload func(string) error) ([]strin
 func runSyncProgress(header string, files []string, groups []BeamGroup, upload func(string) error) ([]string, error) {
 	model := NewSyncProgress(header, len(files))
 	model.groups = groups
+	model.groupOf = make(map[string]int, len(files))
+	for i, g := range groups {
+		for _, path := range g.Paths {
+			model.groupOf[path] = i
+		}
+	}
+
 	p := tea.NewProgram(model)
 
 	go func() {

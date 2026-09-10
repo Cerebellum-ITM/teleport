@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/pascualchavez/teleport/internal/config"
@@ -49,8 +50,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("profile %q not found; run `teleport init` to create it", profileName)
 	}
 
+	steps := newStepLog("sync")
+
+	steps.Start("scan", "git diff HEAD")
 	changed, err := git.ChangedFiles()
 	if err != nil {
+		steps.Fail()
 		return fmt.Errorf("git diff: %w", err)
 	}
 
@@ -74,9 +79,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	changed = dedupe(changed)
 
 	if len(changed) == 0 {
+		steps.Done("no changes")
 		fmt.Println("Nothing to sync — no changes since last commit.")
 		return nil
 	}
+	scanned := fmt.Sprintf("%d file(s)", len(changed))
+	if skippedUntracked > 0 {
+		scanned += fmt.Sprintf(" · %d untracked left out", skippedUntracked)
+	}
+	steps.Done(scanned)
 
 	// Validate --then actions before uploading so a typo (or an un-confirmable
 	// confirm-action headless) fails fast.
@@ -87,13 +98,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	target := fmt.Sprintf("%s:%s", profile.Host, profile.Path)
+
+	steps.Start("connect", target)
 	client, err := connectToProfile(profile)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	defer client.Close()
+	steps.Done("")
 
-	header := fmt.Sprintf("Syncing %d file(s) to %s:%s", len(changed), profile.Host, profile.Path)
+	steps.Start("upload", fmt.Sprintf("%d file(s)", len(changed)))
+	steps.Detach()
+
+	header := fmt.Sprintf("Syncing %d file(s) to %s", len(changed), target)
 	upload := func(localPath string) error {
 		return client.UploadFile(localPath, filepath.Join(profile.Path, localPath))
 	}
@@ -107,8 +126,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if len(failed) > 0 {
+		steps.Fail()
 		return fmt.Errorf("%d file(s) failed to upload", len(failed))
 	}
+	steps.Done("")
 	if skippedUntracked > 0 {
 		log.Warn(
 			fmt.Sprintf("%d untracked file(s) not included", skippedUntracked),
@@ -123,22 +144,27 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	res := syncResult{
 		Command: "sync",
-		Target:  fmt.Sprintf("%s:%s", profile.Host, profile.Path),
+		Target:  target,
 		Sent:    len(changed),
+		Phases:  steps.Durations(),
 		Files:   changed,
 		Actions: actions,
 	}
-	emit(res, func() {}) // human path already printed progress inline
+	emit(res, func() {
+		fmt.Printf("  %s synced %d file(s) → %s%s\n",
+			okMark, len(changed), target, elapsedStyle.Render("  "+steps.Elapsed().Round(time.Millisecond).String()))
+	})
 	return actErr
 }
 
 // syncResult is the --json shape for sync.
 type syncResult struct {
-	Command string         `json:"command"`
-	Target  string         `json:"target"`
-	Sent    int            `json:"sent"`
-	Files   []string       `json:"files"`
-	Actions []actionResult `json:"actions,omitempty"`
+	Command string             `json:"command"`
+	Target  string             `json:"target"`
+	Sent    int                `json:"sent"`
+	Phases  map[string]float64 `json:"phases,omitempty"`
+	Files   []string           `json:"files"`
+	Actions []actionResult     `json:"actions,omitempty"`
 }
 
 func dedupe(files []string) []string {

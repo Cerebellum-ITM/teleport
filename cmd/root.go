@@ -14,8 +14,10 @@ var rootSync bool
 var rootInit bool
 var rootProfiles bool
 var rootBeam bool
+var rootShell bool
 var noInput bool
 var jsonOut bool
+var quietOut bool
 
 var rootCmd = &cobra.Command{
 	Use:   "teleport",
@@ -38,6 +40,8 @@ history clean of post-deploy fix commits.`,
 			return runProfiles(cmd, args)
 		case rootBeam:
 			return runBeam(cmd, args)
+		case rootShell:
+			return runShell(cmd, args)
 		default:
 			printHelp()
 			return nil
@@ -80,12 +84,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "never prompt; resolve from flags or fail (exit 2)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "print a single JSON result object to stdout")
+	rootCmd.PersistentFlags().BoolVarP(&quietOut, "quiet", "q", false, "print only the final result and errors")
 	rootCmd.Flags().BoolVarP(&rootSync, "sync", "s", false, " sync changed files")
 	rootCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, " include untracked files (use with -s)")
 	rootCmd.Flags().BoolVarP(&rootInit, "init", "i", false, " configure a sync profile")
 	rootCmd.Flags().BoolVarP(&rootProfiles, "profiles", "p", false, " list configured profiles")
 	rootCmd.Flags().BoolVarP(&rootBeam, "beam", "b", false, "󰜘 send selected local commits to the remote server")
 	rootCmd.Flags().BoolVarP(&beamAuto, "auto", "a", false, "with -b: auto-select commits not yet sent, skip the commit picker")
+	rootCmd.Flags().BoolVar(&rootShell, "sh", false, " open an interactive shell on the remote")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(profilesCmd)
@@ -95,6 +101,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(mirrorCmd)
+	rootCmd.AddCommand(pushCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(actionsCmd)
 }

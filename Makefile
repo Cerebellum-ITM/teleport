@@ -17,7 +17,9 @@ build:
 	@go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD_PATH)
 	@echo "Binary created at $(BIN_DIR)/$(BINARY)"
 	@echo "Installing to $(INSTALL)/$(BINARY)..."
-	@cp -f $(BIN_DIR)/$(BINARY) "$(INSTALL)/$(BINARY)"
+	@mkdir -p "$(INSTALL)"
+	@cp -f $(BIN_DIR)/$(BINARY) "$(INSTALL)/$(BINARY).new"
+	@mv -f "$(INSTALL)/$(BINARY).new" "$(INSTALL)/$(BINARY)"
 	@echo "Done — $(INSTALL)/$(BINARY) updated"
 
 build_release:

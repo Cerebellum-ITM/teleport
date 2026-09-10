@@ -74,31 +74,45 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := configureSyncProfile(globalCfg, hosts); err != nil {
 			return err
 		}
+		if err := config.SaveGlobal(globalCfg); err != nil {
+			return fmt.Errorf("save global config: %w", err)
+		}
 	}
 
+	// Collect the selected bin OS targets. Bin profiles are per-project.
+	var binOSes []string
 	for _, t := range targets {
-		osName, ok := binTargetOS(t)
-		if !ok {
-			continue
+		if osName, ok := binTargetOS(t); ok {
+			binOSes = append(binOSes, osName)
 		}
-		if err := configureBinProfile(globalCfg, hosts, osName); err != nil {
+	}
+	if len(binOSes) == 0 {
+		return nil
+	}
+
+	localCfg, err := config.LoadLocal()
+	if err != nil {
+		return fmt.Errorf("load local config: %w", err)
+	}
+	if err := maybeMigrateBinProfiles(localCfg); err != nil {
+		return err
+	}
+
+	for _, osName := range binOSes {
+		if err := configureBinProfile(localCfg, hosts, osName); err != nil {
 			return err
 		}
 	}
 
-	if err := config.SaveGlobal(globalCfg); err != nil {
-		return fmt.Errorf("save global config: %w", err)
+	if err := config.SaveLocal(localCfg); err != nil {
+		return fmt.Errorf("save local config: %w", err)
 	}
 
 	// Only ask for local bin_dir if at least one bin profile was configured
 	// without a BinFile (picker is needed as fallback).
 	needBinDir := false
-	for _, t := range targets {
-		osName, ok := binTargetOS(t)
-		if !ok {
-			continue
-		}
-		if p, exists := globalCfg.BinProfiles[osName]; !exists || p.BinFile == "" {
+	for _, osName := range binOSes {
+		if p, exists := localCfg.BinProfiles[osName]; !exists || p.BinFile == "" {
 			needBinDir = true
 			break
 		}
@@ -136,6 +150,17 @@ func pickInitTargets() ([]string, error) {
 		return nil, fmt.Errorf("form: %w", err)
 	}
 	return picks, nil
+}
+
+// projectDirName returns the basename of the current working directory, used as
+// the default remote folder name offered by the dir picker's ctrl+n key. Empty
+// when the cwd can't be determined (disables the key).
+func projectDirName() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(cwd)
 }
 
 func binTargetOS(target string) (string, bool) {
@@ -197,7 +222,7 @@ func configureSyncProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host) e
 	defer client.Close()
 	log.Info("Connected", "host", host.Name)
 
-	remotePath, err := tui.RunDirPickerWith(client, "/", "  Select sync directory")
+	remotePath, err := tui.RunDirPickerNew(client, "/", "  Select sync directory", projectDirName())
 	if err != nil {
 		return err
 	}
@@ -222,7 +247,7 @@ func configureSyncProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host) e
 	return nil
 }
 
-func configureBinProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host, osName string) error {
+func configureBinProfile(localCfg *config.LocalConfig, hosts []sshpkg.Host, osName string) error {
 	log.Info("Pick SSH host for bin profile", "os", osName)
 	host, err := tui.RunHostPicker(hosts)
 	if err != nil {
@@ -241,7 +266,7 @@ func configureBinProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host, os
 		startPath = "/"
 	}
 	header := fmt.Sprintf("  Select bin/ directory for %s", osName)
-	binPath, err := tui.RunDirPickerWith(client, startPath, header)
+	binPath, err := tui.RunDirPickerNew(client, startPath, header, projectDirName())
 	if err != nil {
 		return err
 	}
@@ -278,7 +303,7 @@ func configureBinProfile(globalCfg *config.GlobalConfig, hosts []sshpkg.Host, os
 		// err means user quit/skipped — binFile stays empty or autodetected
 	}
 
-	globalCfg.SetBinProfile(osName, config.BinProfile{
+	localCfg.SetBinProfile(osName, config.BinProfile{
 		Host:       host.Name,
 		BinPath:    binPath,
 		RemoteName: remoteName,
