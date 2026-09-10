@@ -170,7 +170,9 @@ func connectToProfile(profile config.Profile) (*sshpkg.Client, error) {
 // connectToHost connects to target, falling back to a password prompt when
 // no key-based auth method is available.
 func connectToHost(target sshpkg.Host) (*sshpkg.Client, error) {
-	log.Info("Connecting", "host", target.Name)
+	// Debug, not Info: a command's `connect` phase already names the host, and an
+	// Info line would land inside the phase's live line.
+	log.Debug("Connecting", "host", target.Name)
 	client, err := sshpkg.Connect(target)
 	if err == nil {
 		return client, nil

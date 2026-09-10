@@ -421,9 +421,35 @@ The first step that exits non-zero aborts the action (and the chain). Under
 `--json` the logs go to stderr and the result nests an `actions` array; headless,
 an action with `confirm = true` needs `-y` or it fails closed (exit `2`).
 
+## Reading the output
+
+A command tells you what it is doing as one chronological stream. Phases carry a
+`▸`, files carry their own marker, and nothing is silent:
+
+```
+  ▸ scan      13 file(s) · 275.4 MB · 1 excluded                   0.3s
+  ▸ connect   example:/srv/app                                     0.4s
+  ▸ compare   stat 13 · cache 10 · hash 3                          2.1s
+  ↷ base/entrypoint.sh
+  ▸ upload    3 file(s) · 275.1 MB
+  ✓ base/odoo_19.0+e.20260824_all.deb
+  [=====================================]  3/3  100%  00:12
+  ✓ pushed 3 file(s) · 275.1 MB · verified (size) · skipped 10      14.9s
+```
+
+The phase names are shared across the transfer commands — `scan`, `connect`,
+`compare`, `upload`, then the actions — so the same work reads the same way
+everywhere. A running phase rewrites its own line, which is how a long `compare`
+over a large artifact shows `hashing 2/13` instead of looking hung.
+
+Under `--json`, or with no TTY, the same stream becomes `[push] phase: detail`
+lines on stderr. `-v` adds the per-file decisions (`cache hit`, `size differs`,
+`content differs`) and switches the phases to one line each, since a live line
+cannot share the terminal with log output. `-q` leaves only the result.
+
 ## Scripting (headless)
 
-Every command runs without a terminal, for CI and deploy pipelines. Two
+Every command runs without a terminal, for CI and deploy pipelines. Three
 persistent flags:
 
 - `--no-input` — never prompt; resolve from flags or **fail closed** (exit `2`)
@@ -431,7 +457,10 @@ persistent flags:
   picker or confirmation. It's also implied automatically when stdin isn't a TTY.
 - `--json` — print a single JSON result object to stdout (drift, files sent,
   mirror summary…) and route all decoration to stderr, so callers parse instead
-  of scraping ANSI.
+  of scraping ANSI. The object carries `phases` with each phase's duration in
+  seconds, so a slow pipeline step is attributable.
+- `-q`/`--quiet` — print only the final result and errors, dropping the phase
+  log. A failed phase is still named: a silenced command must say where it died.
 
 ```sh
 teleport status --json          # {"target":…,"in_sync":false,"total":146,"drift":[…]}

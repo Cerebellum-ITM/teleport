@@ -187,6 +187,7 @@ func printHelp() {
 			{"-v", "--verbose", ' ', "verbose output"},
 			{"", "--no-input", iconSync, "never prompt; fail closed instead (exit 2)"},
 			{"", "--json", iconSync, "machine-readable result on stdout"},
+			{"-q", "--quiet", ' ', "only the final result and errors"},
 		},
 		Examples: [][]string{
 			{"teleport -s", "sync only modified files"},

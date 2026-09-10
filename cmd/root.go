@@ -17,6 +17,7 @@ var rootBeam bool
 var rootShell bool
 var noInput bool
 var jsonOut bool
+var quietOut bool
 
 var rootCmd = &cobra.Command{
 	Use:   "teleport",
@@ -83,6 +84,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noInput, "no-input", false, "never prompt; resolve from flags or fail (exit 2)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "print a single JSON result object to stdout")
+	rootCmd.PersistentFlags().BoolVarP(&quietOut, "quiet", "q", false, "print only the final result and errors")
 	rootCmd.Flags().BoolVarP(&rootSync, "sync", "s", false, " sync changed files")
 	rootCmd.Flags().BoolVarP(&includeUntracked, "untracked", "u", false, " include untracked files (use with -s)")
 	rootCmd.Flags().BoolVarP(&rootInit, "init", "i", false, " configure a sync profile")

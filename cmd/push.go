@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/charmbracelet/log"
@@ -45,6 +46,11 @@ func init() {
 	registerThenFlag(pushCmd)
 }
 
+var (
+	pushDimStyle = lipgloss.NewStyle().Foreground(theme.TextDim)
+	pushOKMark   = lipgloss.NewStyle().Foreground(theme.Success).Render("✓")
+)
+
 // pushDefaultExcludes are skipped by every push. `.git` is here because sending
 // it is never the intent when pushing a project directory, and `--no-exclude`
 // brings it back for the rare case that wants it (seeding a bare remote repo).
@@ -69,16 +75,17 @@ type pushFile struct {
 
 // pushResult is the --json shape for push.
 type pushResult struct {
-	Command  string         `json:"command"`
-	Target   string         `json:"target"`
-	DryRun   bool           `json:"dry_run,omitempty"`
-	Sent     int            `json:"sent"`
-	Skipped  int            `json:"skipped"`
-	Excluded int            `json:"excluded"`
-	Bytes    int64          `json:"bytes"`
-	Verified string         `json:"verified"`
-	Files    []pushFile     `json:"files"`
-	Actions  []actionResult `json:"actions,omitempty"`
+	Command  string             `json:"command"`
+	Target   string             `json:"target"`
+	DryRun   bool               `json:"dry_run,omitempty"`
+	Sent     int                `json:"sent"`
+	Skipped  int                `json:"skipped"`
+	Excluded int                `json:"excluded"`
+	Bytes    int64              `json:"bytes"`
+	Verified string             `json:"verified"`
+	Phases   map[string]float64 `json:"phases,omitempty"`
+	Files    []pushFile         `json:"files"`
+	Actions  []actionResult     `json:"actions,omitempty"`
 }
 
 func runPush(_ *cobra.Command, args []string) error {
@@ -87,13 +94,18 @@ func runPush(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	steps := newStepLog("push")
+
+	steps.Start("scan", strings.Join(locals, ", "))
 	excludes, err := effectivePushExcludes()
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 
 	items, dirs, excluded, err := collectPushItems(locals, profile.Path, pushTo, excludes)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	if len(items) == 0 && len(dirs) == 0 {
@@ -110,6 +122,12 @@ func runPush(_ *cobra.Command, args []string) error {
 		byLocal[it.Local] = it
 		paths = append(paths, it.Local)
 	}
+
+	scanned := fmt.Sprintf("%d file(s) · %s", len(items), tui.HumanBytes(total))
+	if excluded > 0 {
+		scanned += fmt.Sprintf(" · %d excluded", excluded)
+	}
+	steps.Done(scanned)
 
 	// Validate --then actions before uploading so a typo (or an un-confirmable
 	// confirm-action headless) fails fast.
@@ -129,29 +147,37 @@ func runPush(_ *cobra.Command, args []string) error {
 			DryRun:   true,
 			Excluded: excluded,
 			Bytes:    total,
+			Phases:   steps.Durations(),
 			Files:    files,
 		}
 		emit(res, func() { printPushPlan(target, dirs, items, total, excluded) })
 		return nil
 	}
 
+	steps.Start("connect", target)
 	client, err := connectToProfile(profile)
 	if err != nil {
+		steps.Fail()
 		return err
 	}
 	defer client.Close()
 
 	for _, dir := range dirs {
 		if err := client.MkdirAll(dir); err != nil {
+			steps.Fail()
 			return err
 		}
 	}
+	steps.Done(fmt.Sprintf("%d dir(s) ready", len(dirs)))
 
 	if !pushForce {
-		unchanged, cache, err := planPushSkips(client, items, profileName)
+		steps.Start("compare", fmt.Sprintf("%d file(s)", len(items)))
+		unchanged, cache, detail, err := planPushSkips(client, items, profileName, steps)
 		if err != nil {
+			steps.Fail()
 			return err
 		}
+		steps.Done(detail)
 		if err := config.SavePushCache(profileName, cache); err != nil {
 			log.Warn("could not save the push cache", "err", err)
 		}
@@ -182,13 +208,18 @@ func runPush(_ *cobra.Command, args []string) error {
 			Skipped:  skipped,
 			Excluded: excluded,
 			Verified: verified,
+			Phases:   steps.Durations(),
 			Files:    files,
 		}, func() {
-			fmt.Printf("  nothing to upload · %d file(s) already match %s\n", skipped, target)
+			fmt.Printf("  %s nothing to upload · %d file(s) already match %s  %s\n",
+				pushOKMark, skipped, target, pushDimStyle.Render(steps.Elapsed().Round(time.Millisecond).String()))
 		})
 		_, actErr := executeActions(client, profile, profileName, thenActions, pushYes || noInput)
 		return actErr
 	}
+
+	steps.Start("upload", fmt.Sprintf("%d file(s) · %s", len(paths), tui.HumanBytes(total)))
+	steps.Done("")
 
 	header := fmt.Sprintf("Pushing %d file(s) · %s → %s", len(paths), tui.HumanBytes(total), target)
 	upload := func(local string) error {
@@ -239,17 +270,19 @@ func runPush(_ *cobra.Command, args []string) error {
 		Excluded: excluded,
 		Bytes:    total,
 		Verified: verified,
+		Phases:   steps.Durations(),
 		Files:    files,
 		Actions:  actions,
 	}
 	emit(res, func() {
-		line := fmt.Sprintf("  pushed %d file(s) · %s · verified (%s)", len(paths), tui.HumanBytes(total), verified)
+		line := fmt.Sprintf("  %s pushed %d file(s) · %s · verified (%s)", pushOKMark, len(paths), tui.HumanBytes(total), verified)
 		if skipped > 0 {
 			line += fmt.Sprintf(" · skipped %d unchanged", skipped)
 		}
 		if excluded > 0 {
 			line += fmt.Sprintf(" · excluded %d", excluded)
 		}
+		line += pushDimStyle.Render("  " + steps.Elapsed().Round(time.Millisecond).String())
 		fmt.Println(line)
 	})
 	return actErr
@@ -317,18 +350,21 @@ func pushExcluded(localPath string, patterns []string) bool {
 // Only what is still ambiguous is hashed — on the server for the remote side, so
 // the contents never cross the network. The returned cache carries the new
 // findings and is for the caller to persist.
-func planPushSkips(client *sshpkg.Client, items []pushItem, profileName string) (map[string]bool, *config.PushCache, error) {
+func planPushSkips(client *sshpkg.Client, items []pushItem, profileName string, steps *tui.StepLog) (map[string]bool, *config.PushCache, string, error) {
 	remotes := make([]string, 0, len(items))
 	for _, it := range items {
 		remotes = append(remotes, it.Remote)
 	}
-	stats, err := client.RemoteStatMany(remotes)
+	stats, err := client.RemoteStatMany(remotes, func(done, total int) {
+		steps.Update(fmt.Sprintf("stat %d/%d", done, total))
+	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	cache := config.LoadPushCache(profileName)
 	unchanged := make(map[string]bool, len(items))
+	hits := 0
 	var ambiguous []pushItem
 
 	for _, it := range items {
@@ -349,22 +385,26 @@ func planPushSkips(client *sshpkg.Client, items []pushItem, profileName string) 
 		if fresh && !pushChecksum {
 			log.Debug("skipping: cache hit", "file", it.Local)
 			unchanged[it.Local] = true
+			hits++
 			continue
 		}
 		ambiguous = append(ambiguous, it)
 	}
 
+	detail := fmt.Sprintf("stat %d · cache %d · hash %d", len(stats), hits, len(ambiguous))
 	if len(ambiguous) == 0 {
-		return unchanged, cache, nil
+		return unchanged, cache, detail, nil
 	}
 
 	toHash := make([]string, 0, len(ambiguous))
 	for _, it := range ambiguous {
 		toHash = append(toHash, it.Remote)
 	}
-	remoteHashes, err := client.RemoteSHA256Many(toHash)
+	remoteHashes, err := client.RemoteSHA256Many(toHash, func(done, total int) {
+		steps.Update(fmt.Sprintf("hashing %d/%d", done, total))
+	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	for _, it := range ambiguous {
@@ -393,7 +433,7 @@ func planPushSkips(client *sshpkg.Client, items []pushItem, profileName string) 
 			Hash:        localHash,
 		}
 	}
-	return unchanged, cache, nil
+	return unchanged, cache, detail, nil
 }
 
 // printPushSkipped lists the files the remote already has, so a run does not

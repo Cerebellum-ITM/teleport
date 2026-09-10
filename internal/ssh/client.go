@@ -485,10 +485,11 @@ type RemoteStat struct {
 // in one command per batch. It is the cheap first question — metadata, not
 // content — that lets a caller avoid hashing files whose size already proves they
 // differ. Paths that do not exist are absent from the result.
-func (c *Client) RemoteStatMany(paths []string) (map[string]RemoteStat, error) {
+func (c *Client) RemoteStatMany(paths []string, onProgress func(done, total int)) (map[string]RemoteStat, error) {
 	stats := make(map[string]RemoteStat, len(paths))
-	for start := 0; start < len(paths); start += remoteHashBatch {
-		end := start + remoteHashBatch
+	batch := remoteBatchSize(len(paths))
+	for start := 0; start < len(paths); start += batch {
+		end := start + batch
 		if end > len(paths) {
 			end = len(paths)
 		}
@@ -512,6 +513,9 @@ func (c *Client) RemoteStatMany(paths []string) (map[string]RemoteStat, error) {
 			if ok {
 				stats[name] = st
 			}
+		}
+		if onProgress != nil {
+			onProgress(end, len(paths))
 		}
 	}
 	return stats, nil
@@ -538,18 +542,30 @@ func parseStatLine(line string) (name string, st RemoteStat, ok bool) {
 	return fields[2], RemoteStat{Size: size, ModTime: mtime}, true
 }
 
-// remoteHashBatch is how many paths go into one hashing command, keeping the
-// command line well below the shell's argument limit.
-const remoteHashBatch = 200
+// remoteBatchSize picks how many paths go into one remote command. Small batches
+// while there are few paths, so a caller can report movement; large ones once
+// there are thousands, where the round trip dominates and hundreds of them would
+// cost more than the work. Every size stays well below the shell's argument limit.
+func remoteBatchSize(total int) int {
+	switch {
+	case total <= 50:
+		return 10
+	case total <= 500:
+		return 50
+	default:
+		return 200
+	}
+}
 
 // RemoteSHA256Many hashes paths on the server and returns the lowercase hex
 // SHA256 of each one, so only the digests cross the network instead of the file
 // contents. Paths that are missing or unreadable are absent from the result
 // rather than an error, which is how a caller learns they need uploading.
-func (c *Client) RemoteSHA256Many(paths []string) (map[string]string, error) {
+func (c *Client) RemoteSHA256Many(paths []string, onProgress func(done, total int)) (map[string]string, error) {
 	hashes := make(map[string]string, len(paths))
-	for start := 0; start < len(paths); start += remoteHashBatch {
-		end := start + remoteHashBatch
+	batch := remoteBatchSize(len(paths))
+	for start := 0; start < len(paths); start += batch {
+		end := start + batch
 		if end > len(paths) {
 			end = len(paths)
 		}
@@ -573,6 +589,9 @@ func (c *Client) RemoteSHA256Many(paths []string) (map[string]string, error) {
 			if ok {
 				hashes[name] = hash
 			}
+		}
+		if onProgress != nil {
+			onProgress(end, len(paths))
 		}
 	}
 	return hashes, nil
