@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.10.0] - 2026-09-10
 
 ### Added
 - **The transfer view no longer scrolls the phase log off the screen.** It rendered a frame as tall as the whole terminal (`height - 6` rows of file log, blank-padded at the top), so the moment an upload started, the terminal scrolled by a full screen and everything printed before it — the `scan`, `connect` and `compare` lines that had just been added — was gone. The frame is now a fixed eight rows of recent files plus the header and bar, so it scrolls by its own height and no more, and the phases stay readable above it. The window follows the newest completed file, and for `beam` the commit label is inserted into the same list whenever the commit changes, so a file is never shown without saying which commit it came from. A split pane was considered and rejected for the same reasons as before, plus a new one: it needs the alternate screen, which would erase the whole run — phases, files and all — from the scrollback the moment the command exits.
