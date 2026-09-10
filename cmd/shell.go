@@ -3,13 +3,15 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	sshpkg "github.com/pascualchavez/teleport/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
-// shellRemoteShell is the interactive shell launched on the remote.
-const shellRemoteShell = "zsh"
+// shellCandidates are probed in order on the remote; the first one installed
+// wins.
+var shellCandidates = []string{"zsh", "bash", "sh"}
 
 var shellCmd = &cobra.Command{
 	Use:   "shell [profile]",
@@ -36,11 +38,23 @@ func runShell(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("ssh binary not found in PATH: %w", err)
 	}
 
-	remoteCmd := "exec " + shellRemoteShell
-	if profile.Path != "" {
-		remoteCmd = "cd " + sshpkg.ShellQuote(profile.Path) + " && exec " + shellRemoteShell
-	}
-
-	argv := []string{"ssh", "-t", profile.Host, remoteCmd}
+	argv := []string{"ssh", "-t", profile.Host, remoteShellCommand(profile.Path)}
 	return execSSH(sshBin, argv)
+}
+
+// remoteShellCommand builds the snippet ssh runs on the remote: cd into dir
+// when the profile has one, then exec the first shell that exists. Each
+// candidate is probed with `command -v` because a failed `exec` kills the
+// login shell instead of falling through to the next one.
+func remoteShellCommand(dir string) string {
+	var b strings.Builder
+	if dir != "" {
+		b.WriteString("cd " + sshpkg.ShellQuote(dir) + " || exit 1; ")
+	}
+	for _, sh := range shellCandidates {
+		b.WriteString("command -v " + sh + " >/dev/null 2>&1 && exec " + sh + "; ")
+	}
+	b.WriteString("echo 'teleport: no shell found on the remote (tried " +
+		strings.Join(shellCandidates, ", ") + ")' >&2; exit 127")
+	return b.String()
 }

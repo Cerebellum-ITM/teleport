@@ -314,11 +314,14 @@ teleport shell           # uses the local default profile
 teleport shell staging   # use a specific profile
 ```
 
-It runs `ssh -t <host> "cd <path> && exec zsh"` and **replaces its own process**
-with the system `ssh` binary, so the session behaves and performs exactly like a
-hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and no teleport
-process lingers while you're connected. The host is resolved by `ssh` itself
-from `~/.ssh/config`.
+It runs `ssh -t <host> "cd <path> && exec <shell>"` and **replaces its own
+process** with the system `ssh` binary, so the session behaves and performs
+exactly like a hand-typed `ssh` (native TTY, colors, agent, `~/.ssh/config`) and
+no teleport process lingers while you're connected. The host is resolved by
+`ssh` itself from `~/.ssh/config`. The remote shell is the first of `zsh`,
+`bash`, `sh` that exists on the box, so a server without `zsh` still drops you
+into a shell; if none of the three is installed you get
+`teleport: no shell found on the remote` and exit code 127.
 
 ## Actions — automate remote processes
 
